@@ -6,57 +6,65 @@
 <title>Roulette</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎡</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap">
-<link rel="stylesheet" href="../style.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<div class="table-room">
-  <div class="vignette"></div>
+<div class="vignette"></div>
+
+<div class="room">
 
   <header class="topbar">
     <a class="icon-btn back-link" id="backLink" href="../index.html" title="Retour au Blackjack" aria-label="Retour au Blackjack">←</a>
     <div class="brand">
       <span class="brand-icon">🎡</span>
       <span class="brand-name">Maison<span class="accent">21</span></span>
-      <span class="brand-sub">Roulette</span>
+      <span class="brand-sub">Roulette Européenne</span>
     </div>
-    <div class="bankroll-pill">
-      <span class="chip-dot"></span>
-      <span id="bankroll">1000</span>
-      <span class="currency">jetons</span>
+    <div class="topbar-right">
+      <div class="bankroll-pill">
+        <span class="chip-dot"></span>
+        <span id="bankroll">1000</span>
+        <span class="currency">jetons</span>
+      </div>
+      <button class="icon-btn" id="rulesBtn" title="Règles du jeu" aria-label="Règles du jeu">?</button>
     </div>
-    <button class="icon-btn" id="rulesBtn" title="Règles du jeu" aria-label="Règles du jeu">?</button>
   </header>
 
-  <main class="felt" id="felt">
-    <div class="felt-arc-text">ROULETTE EUROPÉENNE</div>
-    <div class="felt-sub-text">Zéro simple · plein 35:1</div>
+  <main class="stage">
 
-    <div class="history-strip" id="historyStrip"></div>
+    <section class="wheel-section">
+      <div class="history-strip" id="historyStrip"></div>
 
-    <section class="wheel-zone">
-      <div class="dealer-callout" id="dealerCallout"></div>
-      <div class="wheel-wrap" id="wheelWrap">
-        <div class="wheel-pointer"></div>
-        <div class="wheel" id="wheel"></div>
-        <div class="ball-track">
-          <div class="ball-pivot" id="ballPivot"><div class="ball"></div></div>
+      <div class="wheel-stand">
+        <div class="dealer-callout" id="dealerCallout"></div>
+        <div class="wheel-wrap" id="wheelWrap">
+          <div class="wheel-pointer"></div>
+          <div class="wheel-outer-ring"></div>
+          <div class="wheel" id="wheel"></div>
+          <div class="ball-track">
+            <div class="ball-pivot" id="ballPivot"><div class="ball"></div></div>
+          </div>
+          <div class="wheel-hub"><span>21</span></div>
         </div>
-        <div class="wheel-hub"></div>
-      </div>
-      <div class="center-status" id="centerStatus">
-        <div class="status-message" id="statusMessage">Placez vos mises</div>
+        <div class="center-status">
+          <div class="status-message" id="statusMessage">Placez vos mises</div>
+        </div>
       </div>
     </section>
+
+    <section class="table-section">
+      <div class="table-scroll" id="boardScroll">
+        <div class="table-felt" id="board"></div>
+      </div>
+      <p class="scroll-hint">← Faites glisser pour voir tout le tapis →</p>
+    </section>
+
   </main>
 
   <footer class="control-deck">
-    <div class="board-scroll" id="boardScroll">
-      <div class="board" id="board"></div>
-    </div>
-
     <div class="bet-zone" id="betZone">
       <div class="bet-display">
         <span class="bet-label">Mise totale</span>
@@ -76,7 +84,7 @@
     </div>
 
     <div class="game-actions" id="gameActions" hidden>
-      <button class="btn btn-ghost" id="nextRoundBtn">Nouveau tour</button>
+      <button class="btn btn-primary" id="nextRoundBtn">Nouveau tour</button>
     </div>
   </footer>
 </div>
@@ -92,12 +100,15 @@
         <li>Roulette <strong>européenne</strong> : 37 cases numérotées de <strong>0 à 36</strong>, un seul zéro.</li>
         <li>Choisissez la valeur de votre jeton puis cliquez sur le tapis pour placer une mise. Cliquez plusieurs fois pour empiler.</li>
         <li><strong>Plein</strong> (un numéro) : paie <strong>35 contre 1</strong>.</li>
+        <li><strong>Cheval / split</strong> (2 numéros adjacents, cliquez sur la bordure commune) : paie <strong>17 contre 1</strong>.</li>
+        <li><strong>Transversale / street</strong> (3 numéros d'une même colonne du tapis, cliquez sous la colonne) : paie <strong>11 contre 1</strong>.</li>
+        <li><strong>Carré</strong> (4 numéros qui se touchent, cliquez sur l'intersection) : paie <strong>8 contre 1</strong>.</li>
         <li><strong>Rouge/Noir, Pair/Impair, Manque (1-18)/Passe (19-36)</strong> : paient <strong>1 contre 1</strong>.</li>
         <li><strong>Douzaines</strong> (1-12, 13-24, 25-36) et <strong>Colonnes</strong> : paient <strong>2 contre 1</strong>.</li>
-        <li>Si la bille tombe sur <strong>0</strong>, toutes les mises extérieures (rouge/noir, pair/impair, manque/passe, douzaines, colonnes) sont perdues, sauf si le 0 est misé en plein.</li>
+        <li>Si la bille tombe sur <strong>0</strong>, toutes les mises extérieures (rouge/noir, pair/impair, manque/passe, douzaines, colonnes) sont perdues, sauf si le 0 est misé en plein ou à cheval avec lui.</li>
         <li>Utilisez <strong>Annuler</strong> pour retirer votre dernière mise, ou <strong>Effacer</strong> pour tout retirer avant de lancer la bille.</li>
         <li>Le tirage utilise un générateur <strong>cryptographiquement aléatoire</strong> (crypto.getRandomValues), comme au blackjack.</li>
-        <li>L'historique des derniers numéros sortis s'affiche en haut de la table.</li>
+        <li>L'historique des derniers numéros sortis s'affiche au-dessus de la roue.</li>
       </ul>
       <p class="modal-note">Jeu 100% gratuit, à but purement ludique — aucune monnaie réelle n'est utilisée.</p>
     </div>

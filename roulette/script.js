@@ -4,9 +4,15 @@
    ROULETTE EUROPÉENNE — logique de jeu
    37 cases (0 à 36, zéro unique). Tirage cryptographiquement
    aléatoire via crypto.getRandomValues, comme au blackjack.
-   Paiements : plein 35:1, chances simples 1:1, douzaines/
-   colonnes 2:1. Le zéro fait perdre toutes les mises extérieures
-   sauf s'il est misé en plein.
+   Paiements :
+     - Plein (straight)        35:1
+     - Cheval / split          17:1
+     - Transversale / street   11:1
+     - Carré / corner           8:1
+     - Chances simples          1:1  (rouge/noir, pair/impair, manque/passe)
+     - Douzaines / colonnes     2:1
+   Le zéro fait perdre toutes les mises extérieures sauf s'il est
+   misé en plein ou à cheval avec lui.
    ============================================================ */
 
 // Ordre réel des cases sur une roue européenne (sens horaire).
@@ -21,7 +27,7 @@ const RED_NUMBERS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 
 
 const STORAGE_KEY = 'maison21_roulette_bankroll';
 const START_BANKROLL = 1000;
-const HISTORY_MAX = 10;
+const HISTORY_MAX = 12;
 
 // ---------- State ----------
 let bankroll = loadBankroll();
@@ -33,6 +39,7 @@ let wheelRotation = 0; // rotation cumulée de la roue (deg)
 let ballRotation = 0;  // rotation cumulée de la bille (deg)
 let history = [];      // derniers numéros sortis
 let dealerCalloutTimer = null;
+let hotspotDefs = [];  // définitions géométriques des mises à cheval / carré
 
 // ---------- DOM refs ----------
 const els = {
@@ -90,8 +97,18 @@ function numberColor(n) {
 }
 
 // ---------- Mises : définition des gains ----------
+function betNums(betId) {
+  // Pour les mises composites (split-a-b, corner-a-b-c-d, street-a-b-c),
+  // les numéros couverts sont encodés dans l'id, triés par ordre croissant.
+  const dash = betId.indexOf('-');
+  return betId.slice(dash + 1).split('-').map(Number);
+}
+
 function betWins(betId, n) {
-  if (betId.startsWith('straight-')) return parseInt(betId.slice(9), 10) === n;
+  if (betId.startsWith('straight-')) return betNums(betId)[0] === n;
+  if (betId.startsWith('split-') || betId.startsWith('corner-') || betId.startsWith('street-')) {
+    return betNums(betId).includes(n);
+  }
   switch (betId) {
     case 'red': return n !== 0 && numberColor(n) === 'red';
     case 'black': return n !== 0 && numberColor(n) === 'black';
@@ -110,20 +127,83 @@ function betWins(betId, n) {
 }
 function betMultiplier(betId) {
   if (betId.startsWith('straight-')) return 36; // 35:1 + mise rendue
+  if (betId.startsWith('split-')) return 18;     // 17:1 + mise rendue
+  if (betId.startsWith('street-')) return 12;    // 11:1 + mise rendue
+  if (betId.startsWith('corner-')) return 9;     //  8:1 + mise rendue
   if (['dozen-1', 'dozen-2', 'dozen-3', 'col-1', 'col-2', 'col-3'].includes(betId)) return 3; // 2:1 + mise
   return 2; // chances simples 1:1 + mise
 }
 
+// ---------- Construction des définitions de mises à cheval / carré / transversale ----------
+// Grille du tapis : colonne c (1..12) contient les numéros
+//   haut  = 3c    (rangée du haut)
+//   milieu= 3c-1
+//   bas   = 3c-2  (rangée du bas, "1re rangée" — adjacente au 0)
+function buildHotspotDefs() {
+  const defs = [];
+  const splitIds = new Set();
+  const cornerIds = new Set();
+
+  function addSplit(a, b, geom) {
+    const nums = [a, b].sort((x, y) => x - y);
+    const id = `split-${nums.join('-')}`;
+    if (splitIds.has(id)) return;
+    splitIds.add(id);
+    defs.push({ id, kind: 'split', geom });
+  }
+  function addCorner(topLeft, topRight, botLeft, botRight) {
+    const nums = [topLeft, topRight, botLeft, botRight].sort((x, y) => x - y);
+    const id = `corner-${nums.join('-')}`;
+    if (cornerIds.has(id)) return;
+    cornerIds.add(id);
+    defs.push({ id, kind: 'corner', geom: { type: 'corner', topLeft, topRight, botLeft, botRight } });
+  }
+
+  for (let c = 1; c <= 12; c++) {
+    const top = 3 * c, mid = 3 * c - 1, bot = 3 * c - 2;
+    addSplit(top, mid, { type: 'v', top, bottom: mid });
+    addSplit(mid, bot, { type: 'v', top: mid, bottom: bot });
+    if (c < 12) {
+      const top2 = 3 * (c + 1), mid2 = 3 * (c + 1) - 1, bot2 = 3 * (c + 1) - 2;
+      addSplit(top, top2, { type: 'h', left: top, right: top2 });
+      addSplit(mid, mid2, { type: 'h', left: mid, right: mid2 });
+      addSplit(bot, bot2, { type: 'h', left: bot, right: bot2 });
+      addCorner(top, top2, mid, mid2);
+      addCorner(mid, mid2, bot, bot2);
+    }
+  }
+  // Mises à cheval avec le zéro (0-1, 0-2, 0-3)
+  addSplit(0, 1, { type: 'zero', num: 1 });
+  addSplit(0, 2, { type: 'zero', num: 2 });
+  addSplit(0, 3, { type: 'zero', num: 3 });
+
+  return defs;
+}
+
 // ---------- Construction du tapis ----------
 function buildBoard() {
-  const boardNumbers = document.createElement('div');
-  boardNumbers.className = 'board-numbers';
+  els.board.innerHTML = '';
 
-  const zero = makeCell('straight-0', '0', ['zero-cell']);
-  boardNumbers.appendChild(zero);
+  const boardMain = document.createElement('div');
+  boardMain.className = 'board-main';
+
+  // Colonne du zéro
+  const zeroCol = document.createElement('div');
+  zeroCol.className = 'zero-col';
+  zeroCol.appendChild(makeCell('straight-0', '0', ['zero-cell']));
+  boardMain.appendChild(zeroCol);
+
+  // Grille des numéros + transversales
+  const gridCol = document.createElement('div');
+  gridCol.className = 'grid-col';
+
+  const gridWrap = document.createElement('div');
+  gridWrap.className = 'grid-wrap';
+  gridWrap.id = 'gridWrap';
 
   const grid = document.createElement('div');
   grid.className = 'number-grid';
+  grid.id = 'numberGrid';
   for (let n = 1; n <= 36; n++) {
     const colorClass = numberColor(n) === 'red' ? 'num-red' : 'num-black';
     const cell = makeCell(`straight-${n}`, String(n), [colorClass]);
@@ -134,17 +214,54 @@ function buildBoard() {
     cell.style.gridRow = String(row);
     grid.appendChild(cell);
   }
-  boardNumbers.appendChild(grid);
+  gridWrap.appendChild(grid);
 
+  const hotspotLayer = document.createElement('div');
+  hotspotLayer.className = 'hotspot-layer';
+  hotspotLayer.id = 'hotspotLayer';
+  hotspotDefs = buildHotspotDefs();
+  hotspotDefs.forEach((def) => {
+    const nums = betNums(def.id);
+    const el = document.createElement('div');
+    el.className = `hotspot ${def.kind === 'corner' ? 'hotspot-corner' : 'hotspot-split'}`;
+    el.dataset.bet = def.id;
+    el.title = `${def.kind === 'corner' ? 'Carré' : 'Cheval'} ${nums.join('-')} (${def.kind === 'corner' ? '8:1' : '17:1'})`;
+    el.innerHTML = '<span class="bet-badge"></span>';
+    el.addEventListener('click', () => placeBet(def.id));
+    def.el = el;
+    hotspotLayer.appendChild(el);
+  });
+  gridWrap.appendChild(hotspotLayer);
+  gridCol.appendChild(gridWrap);
+
+  const streetRow = document.createElement('div');
+  streetRow.className = 'street-row';
+  streetRow.id = 'streetRow';
+  for (let c = 1; c <= 12; c++) {
+    const top = 3 * c, mid = 3 * c - 1, bot = 3 * c - 2;
+    const id = `street-${[bot, mid, top].sort((x, y) => x - y).join('-')}`;
+    const el = document.createElement('div');
+    el.className = 'street-cell';
+    el.dataset.bet = id;
+    el.title = `Transversale ${bot}-${mid}-${top} (11:1)`;
+    el.innerHTML = '<span class="bet-badge"></span>';
+    el.addEventListener('click', () => placeBet(id));
+    streetRow.appendChild(el);
+  }
+  gridCol.appendChild(streetRow);
+  boardMain.appendChild(gridCol);
+
+  // Colonnes 2:1
   const colBets = document.createElement('div');
   colBets.className = 'column-bets';
   colBets.appendChild(makeCell('col-3', '2:1'));
   colBets.appendChild(makeCell('col-2', '2:1'));
   colBets.appendChild(makeCell('col-1', '2:1'));
-  boardNumbers.appendChild(colBets);
+  boardMain.appendChild(colBets);
 
-  els.board.appendChild(boardNumbers);
+  els.board.appendChild(boardMain);
 
+  // Douzaines
   const dozensRow = document.createElement('div');
   dozensRow.className = 'dozens-row';
   dozensRow.appendChild(makeCell('dozen-1', '1er 12'));
@@ -152,6 +269,7 @@ function buildBoard() {
   dozensRow.appendChild(makeCell('dozen-3', '3e 12'));
   els.board.appendChild(dozensRow);
 
+  // Chances simples
   const outsideRow = document.createElement('div');
   outsideRow.className = 'outside-row';
   outsideRow.appendChild(makeCell('low', '1-18'));
@@ -161,6 +279,8 @@ function buildBoard() {
   outsideRow.appendChild(makeCell('odd', 'IMPAIR'));
   outsideRow.appendChild(makeCell('high', '19-36'));
   els.board.appendChild(outsideRow);
+
+  positionHotspots();
 }
 
 function makeCell(betId, label, extraClasses = []) {
@@ -173,8 +293,72 @@ function makeCell(betId, label, extraClasses = []) {
 }
 
 function cellFor(betId) {
-  return els.board.querySelector(`.cell[data-bet="${betId}"]`);
+  return els.board.querySelector(`[data-bet="${betId}"]`);
 }
+
+// ---------- Positionnement dynamique des carrés / chevaux ----------
+function positionHotspots() {
+  const gridWrap = document.getElementById('gridWrap');
+  if (!gridWrap || hotspotDefs.length === 0) return;
+  const wrapRect = gridWrap.getBoundingClientRect();
+  if (wrapRect.width === 0) return; // pas encore rendu (ex: onglet caché)
+
+  const rectCache = new Map();
+  function rectOf(n) {
+    if (rectCache.has(n)) return rectCache.get(n);
+    const el = cellFor(`straight-${n}`);
+    const r = el.getBoundingClientRect();
+    const rel = {
+      left: r.left - wrapRect.left,
+      top: r.top - wrapRect.top,
+      right: r.right - wrapRect.left,
+      bottom: r.bottom - wrapRect.top,
+      cx: r.left - wrapRect.left + r.width / 2,
+      cy: r.top - wrapRect.top + r.height / 2,
+    };
+    rectCache.set(n, rel);
+    return rel;
+  }
+  function zeroRect() {
+    const el = cellFor('straight-0');
+    const r = el.getBoundingClientRect();
+    return { right: r.right - wrapRect.left };
+  }
+
+  hotspotDefs.forEach((def) => {
+    const g = def.geom;
+    let x, y;
+    if (g.type === 'v') {
+      const t = rectOf(g.top), b = rectOf(g.bottom);
+      x = t.cx;
+      y = (t.bottom + b.top) / 2;
+    } else if (g.type === 'h') {
+      const l = rectOf(g.left), r = rectOf(g.right);
+      x = (l.right + r.left) / 2;
+      y = l.cy;
+    } else if (g.type === 'corner') {
+      const tl = rectOf(g.topLeft), tr = rectOf(g.topRight), bl = rectOf(g.botLeft);
+      x = (tl.right + tr.left) / 2;
+      y = (tl.bottom + bl.top) / 2;
+    } else if (g.type === 'zero') {
+      const num = rectOf(g.num);
+      x = (zeroRect().right + num.left) / 2;
+      y = num.cy;
+    }
+    if (def.el && Number.isFinite(x) && Number.isFinite(y)) {
+      def.el.style.left = `${x}px`;
+      def.el.style.top = `${y}px`;
+    }
+  });
+}
+
+let resizeRaf = null;
+function scheduleReposition() {
+  if (resizeRaf) cancelAnimationFrame(resizeRaf);
+  resizeRaf = requestAnimationFrame(positionHotspots);
+}
+window.addEventListener('resize', scheduleReposition);
+window.addEventListener('orientationchange', scheduleReposition);
 
 // ---------- Construction de la roue ----------
 function buildWheel() {
@@ -191,18 +375,25 @@ function buildWheel() {
   }
   els.wheel.appendChild(frag);
 
-  // Fond conique décoratif (secteurs colorés) aligné sur les cases.
-  const seg = 100 / POCKET_COUNT;
-  const half = seg / 2;
+  // Fond conique : un secteur coloré par case, centré sous chaque numéro.
+  // Chaque case i occupe l'intervalle angulaire [i*seg, (i+1)*seg[ dans le
+  // repère local du gradient, celui-ci étant démarré à -seg/2 (voir "from")
+  // pour que la case 0 soit bien centrée sur l'angle 0 (comme le numéro).
+  const seg = 360 / POCKET_COUNT;
+  const segPct = 100 / POCKET_COUNT;
   const stops = [];
   for (let i = 0; i < POCKET_COUNT; i++) {
     const n = WHEEL_ORDER[i];
     const color = numberColor(n);
-    const c = color === 'red' ? '#a8322a' : color === 'black' ? '#1a1a1a' : '#0e4530';
-    const start = (i * seg - half + 100) % 100;
-    stops.push(`${c} ${i === 0 ? 0 : start}% ${(start + seg).toFixed(3)}%`);
+    const c = color === 'red' ? 'var(--pocket-red)' : color === 'black' ? 'var(--pocket-black)' : 'var(--pocket-green)';
+    const start = (i * segPct).toFixed(4);
+    const end = ((i + 1) * segPct).toFixed(4);
+    stops.push(`${c} ${start}% ${end}%`);
   }
-  els.wheel.style.background = `conic-gradient(from ${-half}deg, ${stops.join(', ')})`;
+  const colorGradient = `conic-gradient(from ${-seg / 2}deg, ${stops.join(', ')})`;
+  // Fines séparations dorées entre chaque case (une ligne au début de chaque secteur).
+  const dividerGradient = `repeating-conic-gradient(from ${-seg / 2}deg, rgba(20,12,4,0.9) 0deg 0.5deg, transparent 0.5deg ${seg}deg)`;
+  els.wheel.style.background = `${dividerGradient}, ${colorGradient}`;
 }
 
 // ---------- Rendu / UI ----------
@@ -324,7 +515,7 @@ function clearBets() {
 }
 
 function clearBetHighlights() {
-  els.board.querySelectorAll('.cell').forEach((c) => {
+  els.board.querySelectorAll('[data-bet]').forEach((c) => {
     c.classList.remove('bet-win', 'bet-lose', 'winning-number');
   });
 }
@@ -411,7 +602,6 @@ function resolveSpin(n) {
   pushHistory(n);
 
   const color = numberColor(n);
-  const kindClass = winnings > totalBet() ? 'win' : winnings > 0 ? 'push' : winnings === 0 && totalBet() === 0 ? '' : 'lose';
   const colorLabel = color === 'red' ? 'Rouge' : color === 'black' ? 'Noir' : 'Zéro';
   let message;
   if (winnings > 0) {
@@ -483,5 +673,10 @@ function init() {
   updateChipAvailability();
   els.gameActions.hidden = true;
   sayDealer('Bienvenue à la table ! Faites vos jeux.');
+  // Repositionne les points de mise une fois les polices/mise en page stabilisées.
+  requestAnimationFrame(() => requestAnimationFrame(positionHotspots));
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(positionHotspots).catch(() => {});
+  }
 }
 init();
