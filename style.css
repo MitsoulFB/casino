@@ -79,7 +79,8 @@ button { font-family: inherit; cursor: pointer; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   padding: 14px 22px;
   background: linear-gradient(180deg, rgba(0,0,0,0.35), transparent);
 }
@@ -100,6 +101,36 @@ button { font-family: inherit; cursor: pointer; }
   line-height: 1;
 }
 .accent { color: var(--gold-bright); }
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.players-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  backdrop-filter: blur(6px);
+}
+.players-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--red-bright);
+  box-shadow: 0 0 6px var(--red-bright);
+  flex-shrink: 0;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+.players-dot.online { background: var(--green-win); box-shadow: 0 0 6px var(--green-win); }
+.players-label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; }
 
 .bankroll-pill {
   display: flex;
@@ -449,6 +480,118 @@ button { font-family: inherit; cursor: pointer; }
 .status-message.pop { animation: popIn 0.4s cubic-bezier(.3,1.6,.4,1) both; }
 @keyframes popIn { from { transform: scale(0.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
+.betting-timer {
+  margin-top: 4px;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--gold-bright);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+.betting-timer.urgent { color: var(--red-bright); }
+
+/* ===== Multi-main : rangée de mains ===== */
+.hands-row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  width: 100%;
+  min-height: 140px;
+  padding: 0 4px 4px;
+  overflow-y: auto;
+}
+
+.hand-pod {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0,0,0,0.16);
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 6px 10px 8px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, opacity 0.2s ease;
+}
+.hand-pod.mine { background: rgba(212,175,90,0.07); }
+.hand-pod.active-turn {
+  border-color: var(--gold-bright);
+  box-shadow: 0 0 0 1px var(--gold-bright), 0 0 18px rgba(212,175,90,0.35);
+  transform: translateY(-4px);
+}
+.hand-pod.empty { opacity: 0.3; }
+.hand-pod .cards { min-height: 90px; }
+.hand-pod .card-slot { width: 58px; height: 82px; margin-left: -20px; }
+
+.hand-pod-owner {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+.hand-pod-owner .me-badge { color: var(--gold-bright); font-weight: 800; opacity: 1; }
+
+.hand-pod-footer { display: flex; align-items: center; gap: 6px; }
+.hand-pod-bet {
+  font-size: 0.68rem;
+  opacity: 0.8;
+  background: rgba(0,0,0,0.35);
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+.hand-pod-result {
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 1px 9px;
+  border-radius: 999px;
+}
+.hand-pod-result.win { color: var(--green-win); }
+.hand-pod-result.lose { color: var(--red-bright); }
+.hand-pod-result.push { color: var(--amber-push); }
+
+/* ===== Mes mains (zone de mise) ===== */
+.own-hands-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.hand-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 6px 8px 6px 14px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.hand-tab.selected { border-color: var(--gold-bright); box-shadow: 0 0 0 1px var(--gold-bright); }
+.hand-tab .amount { color: var(--gold-bright); font-variant-numeric: tabular-nums; }
+.hand-tab .remove-hand {
+  opacity: 0.5;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 50%;
+}
+.hand-tab .remove-hand:hover { opacity: 1; color: var(--red-bright); background: rgba(0,0,0,0.3); }
+
+.waiting-note {
+  font-size: 0.88rem;
+  opacity: 0.7;
+  font-style: italic;
+  padding: 12px 0;
+  text-align: center;
+}
+
 /* ===== Control deck ===== */
 .control-deck {
   position: relative;
@@ -630,6 +773,9 @@ button { font-family: inherit; cursor: pointer; }
 @media (max-width: 480px) {
   .brand-name { font-size: 1rem; }
   .bankroll-pill { font-size: 0.9rem; padding: 6px 12px; }
+  .players-pill { font-size: 0.75rem; padding: 6px 10px; }
+  .players-label { display: none; }
+  .hand-pod .card-slot { width: 44px; height: 62px; margin-left: -16px; }
   .card-slot { width: 60px; height: 84px; margin-left: -20px; }
   .chip { width: 50px; height: 50px; font-size: 0.82rem; }
   .btn { padding: 11px 16px; font-size: 0.85rem; }

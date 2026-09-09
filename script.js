@@ -1,63 +1,60 @@
 'use strict';
 
 /* ============================================================
-   BLACKJACK — logique de jeu
-   Règles : le croupier tire tant qu'il a 16 ou moins, s'arrête à 17+.
-   Blackjack (As + 10) à la distribution paie 3:2.
-   Sabot de 6 jeux de 52 cartes (312 cartes, sans joker), avec
-   carte de coupe réaliste et mélange cryptographiquement aléatoire.
+   BLACKJACK — client de la table partagée
+   ------------------------------------------------------------
+   Ce script ne décide plus de rien : le serveur (server.js) fait
+   autorité sur le sabot, les mains, les tours et les soldes. Le
+   client se contente d'envoyer les actions du joueur et de rendre
+   à l'écran chaque "state" reçu par websocket. Reconnexion auto en
+   cas de coupure.
    ============================================================ */
 
-const SUITS = [
-  { key: 'spades',   symbol: '♠', color: 'black' },
-  { key: 'hearts',   symbol: '♥', color: 'red' },
-  { key: 'diamonds', symbol: '♦', color: 'red' },
-  { key: 'clubs',    symbol: '♣', color: 'black' },
-];
-const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-const STORAGE_KEY = 'maison21_bankroll';
-const START_BANKROLL = 1000;
+const PLAYER_ID_KEY = 'maison21_playerId';
+const BANKROLL_CACHE_KEY = 'maison21_bankroll'; // simple cache d'affichage hors-ligne
+const MAX_HANDS = 4;
 
-const NUM_DECKS = 6;
-const CARDS_PER_DECK = 52;
-const SHOE_SIZE = NUM_DECKS * CARDS_PER_DECK; // 312 cartes, sans joker
+// ---------- Identité persistante du navigateur ----------
+function loadOrCreatePlayerId() {
+  let id = localStorage.getItem(PLAYER_ID_KEY);
+  if (!id) {
+    id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `p-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    localStorage.setItem(PLAYER_ID_KEY, id);
+  }
+  return id;
+}
+const myPlayerId = loadOrCreatePlayerId();
 
-// Pénétration de la carte de coupe : dès que la moitié du sabot a été
-// jouée (50%), un nouveau sabot de 6 jeux est annoncé et remélangé.
-const CUT_PENETRATION_MIN = 0.5;
-const CUT_PENETRATION_MAX = 0.5;
-
-// ---------- State ----------
-let shoe = [];          // pile de cartes restantes (le dessus = fin du tableau)
-let cutCardIndex = 0;   // nombre de cartes restantes à partir duquel la carte de coupe est atteinte
-let needsReshuffle = false;
-let bankroll = loadBankroll();
-let currentBet = 0;
-let playerHand = [];
-let dealerHand = [];
-let state = 'betting'; // betting | player-turn | dealer-turn | round-over
-let dealerHoleRevealed = false;
-let dealerCalloutTimer = null;
+function cacheBankroll(n) {
+  try { localStorage.setItem(BANKROLL_CACHE_KEY, String(n)); } catch { /* ignore */ }
+}
+function loadCachedBankroll() {
+  const n = parseInt(localStorage.getItem(BANKROLL_CACHE_KEY), 10);
+  return Number.isFinite(n) ? n : 1000;
+}
 
 // ---------- DOM refs ----------
 const els = {
   bankroll: document.getElementById('bankroll'),
   bankrollPill: document.querySelector('.bankroll-pill'),
-  betAmount: document.getElementById('betAmount'),
+  playersCount: document.getElementById('playersCount'),
+  playersPill: document.getElementById('playersPill'),
+  connDot: document.getElementById('connDot'),
   chipRack: document.getElementById('chipRack'),
   clearBetBtn: document.getElementById('clearBetBtn'),
-  dealBtn: document.getElementById('dealBtn'),
+  addHandBtn: document.getElementById('addHandBtn'),
   betZone: document.getElementById('betZone'),
+  ownHandsTabs: document.getElementById('ownHandsTabs'),
   gameActions: document.getElementById('gameActions'),
   hitBtn: document.getElementById('hitBtn'),
   standBtn: document.getElementById('standBtn'),
   doubleBtn: document.getElementById('doubleBtn'),
-  nextRoundBtn: document.getElementById('nextRoundBtn'),
+  waitingNote: document.getElementById('waitingNote'),
   dealerCards: document.getElementById('dealerCards'),
-  playerCards: document.getElementById('playerCards'),
   dealerScore: document.getElementById('dealerScore'),
-  playerScore: document.getElementById('playerScore'),
+  handsRow: document.getElementById('handsRow'),
   statusMessage: document.getElementById('statusMessage'),
+  bettingTimer: document.getElementById('bettingTimer'),
   toast: document.getElementById('toast'),
   rulesBtn: document.getElementById('rulesBtn'),
   closeRulesBtn: document.getElementById('closeRulesBtn'),
@@ -68,117 +65,15 @@ const els = {
   dealerCallout: document.getElementById('dealerCallout'),
 };
 
-// ---------- Persistence ----------
-function loadBankroll() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  const n = saved !== null ? parseInt(saved, 10) : NaN;
-  return Number.isFinite(n) && n >= 0 ? n : START_BANKROLL;
-}
-function saveBankroll() {
-  localStorage.setItem(STORAGE_KEY, String(bankroll));
-}
+// ---------- État local ----------
+let latestState = null;
+let selectedHandIndex = 0;
+let dealerCalloutTimer = null;
+let bettingTickInterval = null;
+const cardRenderCache = new Map(); // key -> { count, holeRevealed }
+const podElements = new Map();     // key -> DOM element du pod de main
 
-// ---------- Random source ----------
-// Génère un flottant [0,1) uniforme via crypto.getRandomValues quand
-// disponible (bien plus fiable statistiquement que Math.random pour
-// un mélange équitable), avec repli sur Math.random sinon.
-function secureRandom() {
-  if (window.crypto && window.crypto.getRandomValues) {
-    const buf = new Uint32Array(1);
-    window.crypto.getRandomValues(buf);
-    return buf[0] / 4294967296; // 2^32
-  }
-  return Math.random();
-}
-
-function secureRandomInt(maxExclusive) {
-  return Math.floor(secureRandom() * maxExclusive);
-}
-
-// ---------- Shoe management ----------
-function buildFreshDecks(numDecks) {
-  const deck = [];
-  for (let d = 0; d < numDecks; d++) {
-    for (const suit of SUITS) {
-      for (const rank of RANKS) {
-        deck.push({ rank, suit: suit.key, symbol: suit.symbol, color: suit.color });
-      }
-    }
-  }
-  return deck;
-}
-
-// Mélange Fisher-Yates avec source cryptographique — répété sur
-// plusieurs passes pour un brassage aussi imprévisible que possible,
-// à l'image d'un croupier qui mélange plusieurs fois avant de couper.
-function shuffle(deck) {
-  const passes = 3;
-  for (let p = 0; p < passes; p++) {
-    for (let i = deck.length - 1; i > 0; i--) {
-      const j = secureRandomInt(i + 1);
-      [deck[i], deck[j]] = [deck[j], deck[i]];
-    }
-  }
-  return deck;
-}
-
-// Construit un nouveau sabot de 6 jeux (312 cartes, sans joker),
-// le mélange, puis place une carte de coupe à une profondeur
-// aléatoire réaliste (75-82% du sabot joué avant nouveau mélange).
-function buildShoe() {
-  const deck = shuffle(buildFreshDecks(NUM_DECKS));
-  const penetration = CUT_PENETRATION_MIN + secureRandom() * (CUT_PENETRATION_MAX - CUT_PENETRATION_MIN);
-  cutCardIndex = Math.floor(deck.length * (1 - penetration));
-  needsReshuffle = false;
-  return deck;
-}
-
-function drawCard() {
-  if (shoe.length === 0) shoe = buildShoe(); // filet de sécurité, ne devrait jamais arriver
-  const card = shoe.pop();
-  if (shoe.length <= cutCardIndex) needsReshuffle = true;
-  updateShoeVisual();
-  return card;
-}
-
-// ---------- Shoe visual (RP + comptage de cartes) ----------
-function updateShoeVisual() {
-  const remaining = shoe.length;
-  const fraction = Math.max(remaining / SHOE_SIZE, 0);
-  els.shoeStack.style.height = `${Math.max(fraction * 100, 2)}%`;
-  els.shoeCount.textContent = remaining;
-  els.shoeCount.classList.toggle('low', remaining <= cutCardIndex + 20);
-  els.shoeDecks.textContent = `${(remaining / CARDS_PER_DECK).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} jeux`;
-}
-
-function reshuffleShoeIfNeeded() {
-  if (!needsReshuffle) return false;
-  shoe = buildShoe();
-  updateShoeVisual();
-  sayDealer('Nouveau sabot, mesdames et messieurs — on remélange !', 2400);
-  showToast('🂠 Nouveau sabot de 6 jeux mélangé');
-  return true;
-}
-
-// ---------- Hand value ----------
-function handValue(hand) {
-  let total = 0;
-  let aces = 0;
-  for (const card of hand) {
-    if (card.rank === 'A') { total += 11; aces++; }
-    else if (['J', 'Q', 'K'].includes(card.rank)) total += 10;
-    else total += parseInt(card.rank, 10);
-  }
-  while (total > 21 && aces > 0) { total -= 10; aces--; }
-  const isSoft = aces > 0;
-  return { total, isSoft };
-}
-
-function isBlackjack(hand) {
-  return hand.length === 2 && handValue(hand).total === 21;
-}
-
-// ---------- Rendering ----------
+// ---------- Rendu des cartes ----------
 function renderCardFace(card) {
   const isRed = card.color === 'red';
   return `
@@ -189,55 +84,219 @@ function renderCardFace(card) {
     </div>`;
 }
 
-function createCardSlot(card, faceDown = false) {
+function makeCardSlot(card) {
   const slot = document.createElement('div');
   slot.className = 'card-slot';
-  slot.innerHTML = `
-    <div class="card-inner">
-      ${renderCardFace(card)}
-      <div class="card-face card-back"></div>
-    </div>`;
-  if (faceDown) {
-    // start flipped (showing back)
+  if (card.hidden) {
+    // Carte cachée : uniquement le dos, affiché grâce à la classe
+    // "flipped" qui fait pivoter card-inner de 180° (voir style.css).
     slot.classList.add('flipped');
+    slot.innerHTML = `<div class="card-inner"><div class="card-face card-back"></div></div>`;
+  } else {
+    slot.innerHTML = `<div class="card-inner">${renderCardFace(card)}<div class="card-face card-back"></div></div>`;
   }
   return slot;
 }
 
-function flipSlot(slot) {
-  slot.classList.remove('flipped');
+// Rend une liste de cartes dans un conteneur en ne touchant qu'aux
+// cartes nouvellement ajoutées (évite de rejouer les animations sur
+// des mises à jour qui ne concernent pas cette main).
+function renderCardsIncremental(container, cardsData, cacheKey, holeRevealed) {
+  let cache = cardRenderCache.get(cacheKey);
+  if (!cache) { cache = { count: 0, holeRevealed: false }; cardRenderCache.set(cacheKey, cache); }
+
+  if (cardsData.length < cache.count) {
+    container.innerHTML = '';
+    cache.count = 0;
+    cache.holeRevealed = false;
+  }
+
+  for (let i = cache.count; i < cardsData.length; i++) {
+    container.appendChild(makeCardSlot(cardsData[i]));
+  }
+
+  // Révélation de la carte cachée du croupier : on remplace le contenu
+  // du slot existant plutôt que de le recréer, pour un rendu propre.
+  if (holeRevealed !== undefined && !cache.holeRevealed && holeRevealed) {
+    const slot = container.children[1];
+    const card = cardsData[1];
+    if (slot && card && !card.hidden) {
+      slot.querySelector('.card-inner').innerHTML = `${renderCardFace(card)}<div class="card-face card-back"></div>`;
+      // Retire "flipped" pour déclencher l'animation de retournement CSS.
+      requestAnimationFrame(() => slot.classList.remove('flipped'));
+    }
+  }
+
+  cache.count = cardsData.length;
+  if (holeRevealed !== undefined) cache.holeRevealed = holeRevealed;
 }
 
-function renderScoreBadge(el, hand, { hideTotal = false, forceLabel = null } = {}) {
-  if (hideTotal) { el.textContent = ''; el.className = 'hand-score'; return; }
-  const { total, isSoft } = handValue(hand);
-  let label = forceLabel;
-  if (!label) {
-    if (hand.length === 2 && total === 21) label = 'Blackjack !';
-    else if (total > 21) label = `${total} — Sauté`;
-    else label = isSoft && total !== 21 ? `${total} (souple)` : `${total}`;
-  }
-  el.textContent = label;
+function labelForHand(total, isSoft, cardsLength, state) {
+  if (cardsLength === 0) return '';
+  if (state === 'blackjack' || (cardsLength === 2 && total === 21)) return 'Blackjack !';
+  if (total > 21) return `${total} — Sauté`;
+  return isSoft && total !== 21 ? `${total} (souple)` : `${total}`;
+}
+
+function applyScoreBadgeClasses(el, total, cardsLength) {
   el.className = 'hand-score';
   if (total > 21) el.classList.add('bust');
-  if (hand.length === 2 && total === 21) el.classList.add('blackjack');
+  if (cardsLength === 2 && total === 21) el.classList.add('blackjack');
 }
 
-function updateBankrollDisplay(animate = true) {
-  els.bankroll.textContent = bankroll.toLocaleString('fr-FR');
-  if (animate) {
-    els.bankrollPill.classList.remove('bump');
-    void els.bankrollPill.offsetWidth;
-    els.bankrollPill.classList.add('bump');
+// ---------- Rendu du croupier ----------
+function renderDealer(dealer) {
+  renderCardsIncremental(els.dealerCards, dealer.cards, 'dealer', dealer.holeRevealed);
+
+  if (dealer.cards.length === 0) {
+    els.dealerScore.textContent = '';
+    els.dealerScore.className = 'hand-score';
+    return;
+  }
+  if (!dealer.holeRevealed) {
+    const up = dealer.cards[0];
+    els.dealerScore.textContent = up.hidden ? '' : `${up.rank}${up.symbol}`;
+    els.dealerScore.className = 'hand-score';
+    return;
+  }
+  const label = labelForHand(dealer.total, dealer.isSoft, dealer.cards.length, dealer.isBlackjack ? 'blackjack' : '');
+  els.dealerScore.textContent = label;
+  applyScoreBadgeClasses(els.dealerScore, dealer.total, dealer.cards.length);
+}
+
+// ---------- Rendu de la rangée de mains (tous les joueurs) ----------
+function renderHandsRow(state) {
+  const seenKeys = new Set();
+
+  state.players.forEach((player) => {
+    const isMe = player.id === myPlayerId;
+    player.hands.forEach((hand, handIndex) => {
+      const key = `${player.id}:${handIndex}`;
+
+      // Table propre : on n'affiche pas les emplacements vides des
+      // joueurs déconnectés (ils restent en mémoire pour retrouver
+      // leur solde à la reconnexion, mais n'encombrent pas la table).
+      const isEmpty = hand.bet <= 0 && hand.cards.length === 0;
+      if (!player.connected && isEmpty && !isMe) return;
+
+      seenKeys.add(key);
+
+      let pod = podElements.get(key);
+      if (!pod) {
+        pod = document.createElement('div');
+        pod.className = 'hand-pod';
+        pod.innerHTML = `
+          <div class="hand-pod-owner"></div>
+          <div class="hand-score"></div>
+          <div class="cards"></div>
+          <div class="hand-pod-footer">
+            <span class="hand-pod-bet"></span>
+            <span class="hand-pod-result"></span>
+          </div>`;
+        podElements.set(key, pod);
+      }
+      els.handsRow.appendChild(pod); // no-op si déjà au bon endroit, sinon déplace sans recréer
+
+      const isActive = state.activeTurn && state.activeTurn.playerId === player.id && state.activeTurn.handIndex === handIndex;
+      pod.classList.toggle('mine', isMe);
+      pod.classList.toggle('active-turn', !!isActive);
+      pod.classList.toggle('empty', hand.cards.length === 0 && hand.bet === 0);
+
+      const ownerLabel = player.hands.length > 1 ? `${player.name} · Main ${handIndex + 1}` : player.name;
+      pod.querySelector('.hand-pod-owner').innerHTML = isMe
+        ? `<span class="me-badge">Vous${player.hands.length > 1 ? ` · Main ${handIndex + 1}` : ''}</span>`
+        : ownerLabel;
+
+      const cardsEl = pod.querySelector('.cards');
+      renderCardsIncremental(cardsEl, hand.cards, key, undefined);
+
+      const scoreEl = pod.querySelector('.hand-score');
+      scoreEl.textContent = labelForHand(hand.total, hand.isSoft, hand.cards.length, hand.state);
+      applyScoreBadgeClasses(scoreEl, hand.total, hand.cards.length);
+
+      const betEl = pod.querySelector('.hand-pod-bet');
+      betEl.textContent = hand.bet > 0 ? `Mise : ${hand.bet.toLocaleString('fr-FR')}` : '';
+      betEl.hidden = hand.bet <= 0;
+
+      const resultEl = pod.querySelector('.hand-pod-result');
+      if (hand.result) {
+        const txt = hand.result === 'win' ? `+${hand.payout}` : hand.result === 'push' ? 'Push' : 'Perdu';
+        resultEl.textContent = txt;
+        resultEl.className = `hand-pod-result ${hand.result}`;
+      } else {
+        resultEl.textContent = '';
+        resultEl.className = 'hand-pod-result';
+      }
+    });
+  });
+
+  // Nettoie les pods de mains qui n'existent plus (main retirée, joueur parti au reset).
+  for (const [key, pod] of podElements) {
+    if (!seenKeys.has(key)) {
+      pod.remove();
+      podElements.delete(key);
+      cardRenderCache.delete(key);
+    }
   }
 }
 
-function updateBetDisplay() {
-  els.betAmount.textContent = currentBet.toLocaleString('fr-FR');
-  els.dealBtn.disabled = currentBet <= 0;
+// ---------- Mise / mes mains ----------
+function myPlayer(state) {
+  return state.players.find((p) => p.id === myPlayerId) || null;
 }
 
+function renderOwnHandsTabs(state) {
+  const me = myPlayer(state);
+  if (!me) { els.ownHandsTabs.innerHTML = ''; return; }
+
+  if (selectedHandIndex >= me.hands.length) selectedHandIndex = Math.max(0, me.hands.length - 1);
+
+  els.ownHandsTabs.innerHTML = '';
+  me.hands.forEach((hand, i) => {
+    const tab = document.createElement('div');
+    tab.className = 'hand-tab' + (i === selectedHandIndex ? ' selected' : '');
+    tab.innerHTML = `<span>Main ${i + 1}</span><span class="amount">${hand.bet.toLocaleString('fr-FR')}</span>`;
+    tab.addEventListener('click', () => { selectedHandIndex = i; renderOwnHandsTabs(latestState); });
+    if (me.hands.length > 1) {
+      const rm = document.createElement('span');
+      rm.className = 'remove-hand';
+      rm.textContent = '×';
+      rm.title = 'Retirer cette main';
+      rm.addEventListener('click', (e) => {
+        e.stopPropagation();
+        send({ type: 'removeHand', handIndex: i });
+      });
+      tab.appendChild(rm);
+    }
+    els.ownHandsTabs.appendChild(tab);
+  });
+
+  els.addHandBtn.disabled = me.hands.length >= MAX_HANDS;
+}
+
+function updateChipAvailability(state) {
+  const me = myPlayer(state);
+  const bankroll = me ? me.bankroll : loadCachedBankroll();
+  const totalBet = me ? me.hands.reduce((s, h) => s + h.bet, 0) : 0;
+  const chips = els.chipRack.querySelectorAll('.chip');
+  chips.forEach((chip) => {
+    const val = parseInt(chip.dataset.value, 10);
+    chip.disabled = val > bankroll - totalBet;
+  });
+}
+
+// ---------- Sabot ----------
+function updateShoeVisual(shoeState) {
+  const fraction = Math.max(shoeState.remaining / shoeState.total, 0);
+  els.shoeStack.style.height = `${Math.max(fraction * 100, 2)}%`;
+  els.shoeCount.textContent = shoeState.remaining;
+  els.shoeCount.classList.toggle('low', shoeState.remaining <= shoeState.cutCardIndex + 20);
+  els.shoeDecks.textContent = `${(shoeState.remaining / 52).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} jeux`;
+}
+
+// ---------- Statut / minuteur de mise ----------
 function setStatus(message, kind = '') {
+  if (els.statusMessage.textContent === message && els.statusMessage.className.includes(kind)) return;
   els.statusMessage.textContent = message;
   els.statusMessage.className = 'status-message';
   if (kind) els.statusMessage.classList.add(kind);
@@ -245,6 +304,19 @@ function setStatus(message, kind = '') {
   els.statusMessage.classList.add('pop');
 }
 
+function tickBettingTimer() {
+  if (!latestState || latestState.phase !== 'betting') {
+    els.bettingTimer.hidden = true;
+    return;
+  }
+  const remainingMs = latestState.bettingEndsAt - Date.now();
+  const seconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  els.bettingTimer.hidden = false;
+  els.bettingTimer.textContent = `Distribution dans ${seconds}s`;
+  els.bettingTimer.classList.toggle('urgent', seconds <= 5);
+}
+
+// ---------- Toast / annonces du croupier ----------
 function showToast(msg) {
   els.toast.textContent = msg;
   els.toast.classList.add('show');
@@ -252,332 +324,122 @@ function showToast(msg) {
   showToast._t = setTimeout(() => els.toast.classList.remove('show'), 1800);
 }
 
-// ---------- Dealer roleplay callouts ----------
-// Petites annonces du croupier pour l'ambiance de table, dans le style
-// d'un vrai casino francophone.
 function sayDealer(text, duration = 2600) {
   clearTimeout(dealerCalloutTimer);
   els.dealerCallout.innerHTML = `<span>${text}</span>`;
-  dealerCalloutTimer = setTimeout(() => {
-    els.dealerCallout.innerHTML = '';
-  }, duration);
+  dealerCalloutTimer = setTimeout(() => { els.dealerCallout.innerHTML = ''; }, duration);
 }
 
-// ---------- Betting phase ----------
-function updateChipAvailability() {
-  const chips = els.chipRack.querySelectorAll('.chip');
-  chips.forEach((chip) => {
-    const val = parseInt(chip.dataset.value, 10);
-    chip.disabled = val > bankroll - currentBet;
+// ---------- Rendu global à partir d'un "state" serveur ----------
+function render(state) {
+  latestState = state;
+
+  // Connexion / joueurs à table
+  els.playersCount.textContent = state.playersCount;
+
+  // Bankroll (le mien)
+  const me = myPlayer(state);
+  const bankroll = me ? me.bankroll : loadCachedBankroll();
+  els.bankroll.textContent = bankroll.toLocaleString('fr-FR');
+  cacheBankroll(bankroll);
+
+  updateShoeVisual(state.shoe);
+  renderDealer(state.dealer);
+  renderHandsRow(state);
+  updateChipAvailability(state);
+
+  setStatus(state.statusMessage, state.statusKind);
+  tickBettingTimer();
+
+  // Zone de mise visible seulement pendant la phase de mise.
+  const betting = state.phase === 'betting';
+  els.betZone.hidden = !betting;
+  els.betZone.style.display = betting ? 'flex' : 'none';
+  if (betting) renderOwnHandsTabs(state);
+
+  // Actions de jeu : visibles pendant playing/dealer/resolved, actives
+  // seulement si c'est mon tour.
+  const showActions = state.phase === 'playing' || state.phase === 'dealer' || state.phase === 'resolved';
+  els.gameActions.hidden = !showActions;
+
+  const myTurn = state.phase === 'playing' && state.activeTurn && state.activeTurn.playerId === myPlayerId;
+  els.hitBtn.hidden = !myTurn;
+  els.standBtn.hidden = !myTurn;
+  const activeHandMine = myTurn ? me.hands[state.activeTurn.handIndex] : null;
+  els.doubleBtn.hidden = !myTurn || !activeHandMine || activeHandMine.cards.length !== 2;
+  els.hitBtn.disabled = !myTurn;
+  els.standBtn.disabled = !myTurn;
+  els.doubleBtn.disabled = !myTurn || !activeHandMine || (bankroll < (activeHandMine ? activeHandMine.bet : Infinity));
+  els.waitingNote.hidden = myTurn || !showActions;
+}
+
+// ---------- Connexion WebSocket ----------
+let ws = null;
+let reconnectDelay = 1000;
+const RECONNECT_MAX = 10000;
+
+function wsUrl() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${location.host}/ws`;
+}
+
+function send(payload) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(payload));
+  }
+}
+
+function connect() {
+  setStatus('Connexion à la table…');
+  els.connDot.classList.remove('online');
+
+  ws = new WebSocket(wsUrl());
+
+  ws.addEventListener('open', () => {
+    reconnectDelay = 1000;
+    els.connDot.classList.add('online');
+    send({ type: 'hello', playerId: myPlayerId });
   });
-}
 
-function addToBet(value) {
-  if (state !== 'betting') return;
-  if (value > bankroll - currentBet) {
-    showToast("Fonds insuffisants pour ce jeton");
-    return;
-  }
-  currentBet += value;
-  updateBetDisplay();
-  updateChipAvailability();
-}
-
-function clearBet() {
-  if (state !== 'betting') return;
-  currentBet = 0;
-  updateBetDisplay();
-  updateChipAvailability();
-}
-
-// ---------- Round flow ----------
-function startRound() {
-  if (currentBet <= 0 || currentBet > bankroll) return;
-
-  // La carte de coupe n'est jamais franchie en pleine main : on ne
-  // remélange qu'ici, entre deux manches.
-  const justReshuffled = reshuffleShoeIfNeeded();
-
-  bankroll -= currentBet;
-  updateBankrollDisplay();
-  saveBankroll();
-
-  state = 'player-turn';
-  dealerHoleRevealed = false;
-  playerHand = [];
-  dealerHand = [];
-  els.playerCards.innerHTML = '';
-  els.dealerCards.innerHTML = '';
-  els.playerScore.textContent = '';
-  els.dealerScore.textContent = '';
-
-  els.betZone.hidden = false;
-  els.betZone.style.display = 'none';
-  els.gameActions.hidden = false;
-  els.nextRoundBtn.hidden = true;
-  els.hitBtn.disabled = false;
-  els.standBtn.disabled = false;
-  els.doubleBtn.disabled = currentBet > bankroll;
-
-  setStatus('Distribution en cours…');
-  if (!justReshuffled) sayDealer('Les jeux sont faits, rien ne va plus.');
-  else setTimeout(() => sayDealer('Les jeux sont faits, rien ne va plus.'), 2500);
-
-  // Deal sequence: player, dealer, player, dealer(hidden)
-  const seq = [
-    () => dealCardTo('player'),
-    () => dealCardTo('dealer'),
-    () => dealCardTo('player'),
-    () => dealCardTo('dealer', true),
-  ];
-  let i = 0;
-  const step = () => {
-    if (i < seq.length) {
-      seq[i]();
-      i++;
-      setTimeout(step, 260);
-    } else {
-      afterInitialDeal();
+  ws.addEventListener('message', (evt) => {
+    let msg;
+    try { msg = JSON.parse(evt.data); } catch { return; }
+    if (msg.type === 'welcome') {
+      cacheBankroll(msg.bankroll);
+    } else if (msg.type === 'state') {
+      render(msg);
+    } else if (msg.type === 'dealerSay') {
+      sayDealer(msg.text, msg.duration);
+    } else if (msg.type === 'toast') {
+      showToast(msg.text);
     }
+  });
+
+  const onDown = () => {
+    latestState = null; // évite d'afficher un minuteur/état périmé pendant la coupure
+    els.connDot.classList.remove('online');
+    setStatus('Connexion perdue — reconnexion…');
+    els.gameActions.hidden = true;
+    els.betZone.hidden = true;
+    els.bettingTimer.hidden = true;
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 1.6, RECONNECT_MAX);
   };
-  step();
+  ws.addEventListener('close', onDown);
+  ws.addEventListener('error', () => { try { ws.close(); } catch { /* ignore */ } });
 }
 
-function dealCardTo(who, faceDown = false) {
-  const card = drawCard();
-  if (who === 'player') {
-    playerHand.push(card);
-    const slot = createCardSlot(card, false);
-    els.playerCards.appendChild(slot);
-    renderScoreBadge(els.playerScore, playerHand);
-  } else {
-    dealerHand.push(card);
-    const slot = createCardSlot(card, faceDown);
-    els.dealerCards.appendChild(slot);
-    if (!faceDown) {
-      renderScoreBadge(els.dealerScore, dealerHand, { forceLabel: cardLabel(card) });
-    } else {
-      els.dealerScore.textContent = '';
-    }
-  }
-}
-
-function cardLabel(card) {
-  return `${card.rank}${card.symbol}`;
-}
-
-function afterInitialDeal() {
-  const playerBJ = isBlackjack(playerHand);
-  const dealerBJ = isBlackjack(dealerHand);
-
-  if (playerBJ || dealerBJ) {
-    revealDealerHole();
-    resolveRound();
-    return;
-  }
-
-  setStatus('Tirez ou restez');
-  sayDealer('À vous de jouer.');
-}
-
-function revealDealerHole() {
-  if (dealerHoleRevealed) return;
-  dealerHoleRevealed = true;
-  const slots = els.dealerCards.querySelectorAll('.card-slot');
-  const holeSlot = slots[1];
-  if (holeSlot) flipSlot(holeSlot);
-  renderScoreBadge(els.dealerScore, dealerHand);
-}
-
-// ---------- Player actions ----------
-function playerHit() {
-  if (state !== 'player-turn') return;
-  dealCardTo('player');
-  const { total } = handValue(playerHand);
-  els.doubleBtn.disabled = true;
-  if (total > 21) {
-    setStatus('Sauté ! Vous dépassez 21', 'lose');
-    endPlayerTurn(true);
-  } else if (total === 21) {
-    playerStand();
-  }
-}
-
-function playerStand() {
-  if (state !== 'player-turn') return;
-  endPlayerTurn();
-}
-
-function playerDouble() {
-  if (state !== 'player-turn') return;
-  if (playerHand.length !== 2 || currentBet > bankroll) return;
-  bankroll -= currentBet;
-  currentBet *= 2;
-  updateBankrollDisplay();
-  updateBetDisplay();
-  saveBankroll();
-  els.hitBtn.disabled = true;
-  els.doubleBtn.disabled = true;
-  els.standBtn.disabled = true;
-  dealCardTo('player');
-  const { total } = handValue(playerHand);
-  setTimeout(() => {
-    if (total > 21) {
-      setStatus('Sauté ! Vous dépassez 21', 'lose');
-      endPlayerTurn(true);
-    } else {
-      endPlayerTurn();
-    }
-  }, 400);
-}
-
-function endPlayerTurn(busted = false) {
-  state = 'dealer-turn';
-  els.hitBtn.disabled = true;
-  els.standBtn.disabled = true;
-  els.doubleBtn.disabled = true;
-
-  if (busted) {
-    setTimeout(() => { revealDealerHole(); resolveRound(); }, 500);
-    return;
-  }
-
-  setTimeout(dealerPlay, 500);
-}
-
-// ---------- Dealer AI ----------
-function dealerPlay() {
-  revealDealerHole();
-  setStatus('Le croupier joue…');
-  sayDealer('Le croupier retourne son jeu.');
-
-  const step = () => {
-    const { total } = handValue(dealerHand);
-    // Dealer draws while total <= 16, stands on 17+ (including soft 17)
-    if (total <= 16) {
-      dealCardTo('dealer');
-      renderScoreBadge(els.dealerScore, dealerHand);
-      setTimeout(step, 650);
-    } else {
-      setTimeout(resolveRound, 500);
-    }
-  };
-  setTimeout(step, 500);
-}
-
-// ---------- Resolution ----------
-function resolveRound() {
-  state = 'round-over';
-  revealDealerHole();
-
-  const player = handValue(playerHand);
-  const dealer = handValue(dealerHand);
-  const playerBJ = isBlackjack(playerHand);
-  const dealerBJ = isBlackjack(dealerHand);
-
-  let outcome; // 'win' | 'lose' | 'push'
-  let payout = 0;
-  let message = '';
-
-  let dealerLine = '';
-
-  if (playerBJ && dealerBJ) {
-    outcome = 'push';
-    payout = currentBet;
-    message = 'Push — Deux Blackjacks';
-    dealerLine = 'Double Blackjack — mise remboursée.';
-  } else if (playerBJ) {
-    outcome = 'win';
-    payout = currentBet + Math.floor(currentBet * 1.5);
-    message = 'Blackjack ! Vous gagnez 3:2';
-    dealerLine = 'Blackjack, bien joué !';
-  } else if (dealerBJ) {
-    outcome = 'lose';
-    payout = 0;
-    message = 'Blackjack du croupier — Vous perdez';
-    dealerLine = 'Blackjack pour la maison.';
-  } else if (player.total > 21) {
-    outcome = 'lose';
-    payout = 0;
-    message = 'Sauté — Vous perdez';
-    dealerLine = 'Dommage, vous avez sauté.';
-  } else if (dealer.total > 21) {
-    outcome = 'win';
-    payout = currentBet * 2;
-    message = 'Le croupier saute — Vous gagnez !';
-    dealerLine = 'Le croupier saute, la table gagne !';
-  } else if (player.total > dealer.total) {
-    outcome = 'win';
-    payout = currentBet * 2;
-    message = `Vous gagnez ! ${player.total} contre ${dealer.total}`;
-    dealerLine = 'Bien joué, vous l\'emportez.';
-  } else if (player.total < dealer.total) {
-    outcome = 'lose';
-    payout = 0;
-    message = `Vous perdez — ${dealer.total} contre ${player.total}`;
-    dealerLine = 'La maison l\'emporte cette fois.';
-  } else {
-    outcome = 'push';
-    payout = currentBet;
-    message = `Égalité à ${player.total} — Push`;
-    dealerLine = 'Égalité — mise remboursée.';
-  }
-
-  bankroll += payout;
-  updateBankrollDisplay();
-  saveBankroll();
-
-  renderScoreBadge(els.playerScore, playerHand);
-  renderScoreBadge(els.dealerScore, dealerHand);
-
-  const kindClass = outcome === 'win' ? 'win' : outcome === 'lose' ? 'lose' : 'push';
-  setStatus(message, kindClass);
-  sayDealer(dealerLine);
-
-  els.gameActions.querySelectorAll('#hitBtn,#standBtn,#doubleBtn').forEach(b => b.hidden = true);
-  els.nextRoundBtn.hidden = false;
-
-  if (bankroll <= 0) {
-    setTimeout(() => {
-      showToast('Plus de jetons — remise à zéro du solde');
-      bankroll = START_BANKROLL;
-      updateBankrollDisplay();
-      saveBankroll();
-    }, 1400);
-  }
-}
-
-function nextRound() {
-  state = 'betting';
-  currentBet = 0;
-  updateBetDisplay();
-  updateChipAvailability();
-
-  els.gameActions.hidden = true;
-  els.gameActions.querySelectorAll('#hitBtn,#standBtn,#doubleBtn').forEach(b => b.hidden = false);
-  els.nextRoundBtn.hidden = true;
-  els.betZone.style.display = 'flex';
-
-  els.playerCards.innerHTML = '';
-  els.dealerCards.innerHTML = '';
-  els.playerScore.textContent = '';
-  els.dealerScore.textContent = '';
-  setStatus('Placez votre mise pour commencer');
-  sayDealer('Faites vos jeux, mesdames et messieurs.');
-}
-
-// ---------- Event bindings ----------
+// ---------- Actions du joueur ----------
 els.chipRack.addEventListener('click', (e) => {
   const chip = e.target.closest('.chip');
-  if (!chip) return;
-  addToBet(parseInt(chip.dataset.value, 10));
+  if (!chip || chip.disabled) return;
+  send({ type: 'bet', handIndex: selectedHandIndex, amount: parseInt(chip.dataset.value, 10) });
 });
-els.clearBetBtn.addEventListener('click', clearBet);
-els.dealBtn.addEventListener('click', startRound);
-els.hitBtn.addEventListener('click', playerHit);
-els.standBtn.addEventListener('click', playerStand);
-els.doubleBtn.addEventListener('click', playerDouble);
-els.nextRoundBtn.addEventListener('click', nextRound);
+els.clearBetBtn.addEventListener('click', () => send({ type: 'clearBet', handIndex: selectedHandIndex }));
+els.addHandBtn.addEventListener('click', () => send({ type: 'addHand' }));
+els.hitBtn.addEventListener('click', () => send({ type: 'hit' }));
+els.standBtn.addEventListener('click', () => send({ type: 'stand' }));
+els.doubleBtn.addEventListener('click', () => send({ type: 'double' }));
 
 els.rulesBtn.addEventListener('click', () => els.rulesModal.classList.add('open'));
 els.closeRulesBtn.addEventListener('click', () => els.rulesModal.classList.remove('open'));
@@ -586,21 +448,18 @@ els.rulesModal.addEventListener('click', (e) => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') els.rulesModal.classList.remove('open');
-  if (state === 'player-turn') {
-    if (e.key.toLowerCase() === 'h') playerHit();
-    if (e.key.toLowerCase() === 's') playerStand();
-    if (e.key.toLowerCase() === 'd' && !els.doubleBtn.disabled) playerDouble();
+  if (!latestState) return;
+  const myTurn = latestState.phase === 'playing' && latestState.activeTurn && latestState.activeTurn.playerId === myPlayerId;
+  if (myTurn) {
+    if (e.key.toLowerCase() === 'h') send({ type: 'hit' });
+    if (e.key.toLowerCase() === 's') send({ type: 'stand' });
+    if (e.key.toLowerCase() === 'd' && !els.doubleBtn.disabled) send({ type: 'double' });
   }
 });
 
 // ---------- Init ----------
-function init() {
-  shoe = buildShoe();
-  updateShoeVisual();
-  updateBankrollDisplay(false);
-  updateBetDisplay();
-  updateChipAvailability();
-  els.gameActions.hidden = true;
-  sayDealer('Bienvenue à la table ! Faites vos jeux.');
-}
-init();
+els.bankroll.textContent = loadCachedBankroll().toLocaleString('fr-FR');
+els.gameActions.hidden = true;
+els.betZone.hidden = true;
+bettingTickInterval = setInterval(tickBettingTimer, 500);
+connect();

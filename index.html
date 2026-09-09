@@ -19,17 +19,24 @@
       <span class="brand-icon">♠</span>
       <span class="brand-name">Maison<span class="accent">21</span></span>
     </div>
-    <div class="bankroll-pill">
-      <span class="chip-dot"></span>
-      <span id="bankroll">1000</span>
-      <span class="currency">jetons</span>
+    <div class="topbar-right">
+      <div class="players-pill" id="playersPill" title="Joueurs à la table">
+        <span class="players-dot" id="connDot"></span>
+        <span id="playersCount">0</span>
+        <span class="players-label">à la table</span>
+      </div>
+      <div class="bankroll-pill">
+        <span class="chip-dot"></span>
+        <span id="bankroll">1000</span>
+        <span class="currency">jetons</span>
+      </div>
+      <button class="icon-btn" id="rulesBtn" title="Règles du jeu" aria-label="Règles du jeu">?</button>
     </div>
-    <button class="icon-btn" id="rulesBtn" title="Règles du jeu" aria-label="Règles du jeu">?</button>
   </header>
 
   <main class="felt" id="felt">
     <div class="felt-arc-text">BLACKJACK PAIE 3 : 2</div>
-    <div class="felt-sub-text">Le croupier tire jusqu'à 16 inclus · 6 jeux de cartes</div>
+    <div class="felt-sub-text">Le croupier tire jusqu'à 16 inclus · 6 jeux de cartes · table partagée</div>
 
     <div class="shoe-rack" id="shoeRack" title="Sabot de cartes">
       <div class="shoe-box">
@@ -53,24 +60,16 @@
     </section>
 
     <div class="center-status" id="centerStatus">
-      <div class="status-message" id="statusMessage">Placez votre mise pour commencer</div>
+      <div class="status-message" id="statusMessage">Connexion à la table…</div>
+      <div class="betting-timer" id="bettingTimer" hidden></div>
     </div>
 
-    <section class="seat player-seat">
-      <div class="cards" id="playerCards"></div>
-      <div class="seat-label">
-        <span>Vous</span>
-        <span class="hand-score" id="playerScore"></span>
-      </div>
-    </section>
+    <section class="hands-row" id="handsRow"></section>
   </main>
 
   <footer class="control-deck">
     <div class="bet-zone" id="betZone">
-      <div class="bet-display">
-        <span class="bet-label">Mise</span>
-        <span class="bet-amount" id="betAmount">0</span>
-      </div>
+      <div class="own-hands-tabs" id="ownHandsTabs"></div>
       <div class="chip-rack" id="chipRack">
         <button class="chip chip-5" data-value="5"><span>5</span></button>
         <button class="chip chip-25" data-value="25"><span>25</span></button>
@@ -78,8 +77,8 @@
         <button class="chip chip-500" data-value="500"><span>500</span></button>
       </div>
       <div class="bet-actions">
-        <button class="btn btn-ghost" id="clearBetBtn">Effacer</button>
-        <button class="btn btn-primary" id="dealBtn" disabled>Distribuer</button>
+        <button class="btn btn-ghost" id="clearBetBtn">Effacer la main</button>
+        <button class="btn btn-ghost" id="addHandBtn">+ Ajouter une main</button>
       </div>
     </div>
 
@@ -87,8 +86,7 @@
       <button class="btn btn-action" id="hitBtn">Tirer</button>
       <button class="btn btn-action" id="standBtn">Rester</button>
       <button class="btn btn-action" id="doubleBtn">Doubler</button>
-      <button class="btn btn-action" id="splitBtn" hidden>Séparer</button>
-      <button class="btn btn-ghost" id="nextRoundBtn" hidden>Manche suivante</button>
+      <div class="waiting-note" id="waitingNote" hidden>En attente des autres joueurs…</div>
     </div>
   </footer>
 </div>
@@ -108,7 +106,8 @@
         <li>Vous pouvez <strong>Tirer</strong> (piocher), <strong>Rester</strong> (garder votre main) ou <strong>Doubler</strong> (doubler la mise, une seule carte de plus) sur vos deux premières cartes.</li>
         <li>Dépasser 21, c'est un <strong>Bust</strong> : vous perdez immédiatement.</li>
         <li>Égalité de score = <strong>Push</strong>, votre mise est remboursée.</li>
-        <li>La partie se joue avec un <strong>sabot de 6 jeux de 52 cartes</strong> (312 cartes, sans joker), mélangé de façon cryptographiquement aléatoire.</li>
+        <li>Table <strong>partagée</strong> : tout le monde joue contre le même croupier. Vous pouvez ouvrir jusqu'à <strong>4 mains</strong> à la fois avec le bouton « + Ajouter une main ». Chaque manche démarre par une phase de mise chronométrée, puis chaque main de chaque joueur se joue à tour de rôle.</li>
+        <li>La partie se joue avec un <strong>sabot de 6 jeux de 52 cartes</strong> (312 cartes, sans joker), mélangé de façon cryptographiquement aléatoire côté serveur.</li>
         <li>Une <strong>carte de coupe</strong> est placée à la moitié du sabot : dès qu'il ne reste plus que <strong>156 cartes</strong> (50%), le croupier annonce un <strong>nouveau sabot</strong> et remélange les 312 cartes avant la manche suivante — jamais en pleine main.</li>
         <li>Le nombre de cartes restantes s'affiche sur le sabot, pour s'entraîner au <strong>comptage de cartes</strong>.</li>
       </ul>
