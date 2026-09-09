@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Blackjack</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🃏</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="table-room">
+  <div class="vignette"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">♠</span>
+      <span class="brand-name">Maison<span class="accent">21</span></span>
+    </div>
+    <div class="bankroll-pill">
+      <span class="chip-dot"></span>
+      <span id="bankroll">1000</span>
+      <span class="currency">jetons</span>
+    </div>
+    <button class="icon-btn" id="rulesBtn" title="Règles du jeu" aria-label="Règles du jeu">?</button>
+  </header>
+
+  <main class="felt" id="felt">
+    <div class="felt-arc-text">BLACKJACK PAIE 3 : 2</div>
+    <div class="felt-sub-text">Le croupier tire jusqu'à 16 inclus · 6 jeux de cartes</div>
+
+    <div class="shoe-rack" id="shoeRack" title="Sabot de cartes">
+      <div class="shoe-box">
+        <div class="shoe-stack" id="shoeStack"></div>
+        <div class="shoe-slot-glow"></div>
+      </div>
+      <div class="shoe-info">
+        <span class="shoe-count" id="shoeCount">312</span>
+        <span class="shoe-label">cartes restantes</span>
+        <span class="shoe-decks" id="shoeDecks">6,0 jeux</span>
+      </div>
+    </div>
+
+    <section class="seat dealer-seat">
+      <div class="seat-label">
+        <span class="dealer-name">🎩 Le Croupier</span>
+        <span class="hand-score" id="dealerScore"></span>
+      </div>
+      <div class="dealer-callout" id="dealerCallout"></div>
+      <div class="cards" id="dealerCards"></div>
+    </section>
+
+    <div class="center-status" id="centerStatus">
+      <div class="status-message" id="statusMessage">Placez votre mise pour commencer</div>
+    </div>
+
+    <section class="seat player-seat">
+      <div class="cards" id="playerCards"></div>
+      <div class="seat-label">
+        <span>Vous</span>
+        <span class="hand-score" id="playerScore"></span>
+      </div>
+    </section>
+  </main>
+
+  <footer class="control-deck">
+    <div class="bet-zone" id="betZone">
+      <div class="bet-display">
+        <span class="bet-label">Mise</span>
+        <span class="bet-amount" id="betAmount">0</span>
+      </div>
+      <div class="chip-rack" id="chipRack">
+        <button class="chip chip-5" data-value="5"><span>5</span></button>
+        <button class="chip chip-25" data-value="25"><span>25</span></button>
+        <button class="chip chip-100" data-value="100"><span>100</span></button>
+        <button class="chip chip-500" data-value="500"><span>500</span></button>
+      </div>
+      <div class="bet-actions">
+        <button class="btn btn-ghost" id="clearBetBtn">Effacer</button>
+        <button class="btn btn-primary" id="dealBtn" disabled>Distribuer</button>
+      </div>
+    </div>
+
+    <div class="game-actions" id="gameActions" hidden>
+      <button class="btn btn-action" id="hitBtn">Tirer</button>
+      <button class="btn btn-action" id="standBtn">Rester</button>
+      <button class="btn btn-action" id="doubleBtn">Doubler</button>
+      <button class="btn btn-action" id="splitBtn" hidden>Séparer</button>
+      <button class="btn btn-ghost" id="nextRoundBtn" hidden>Manche suivante</button>
+    </div>
+  </footer>
+</div>
+
+<div class="modal-backdrop" id="rulesModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Règles du Blackjack</h2>
+      <button class="icon-btn" id="closeRulesBtn" aria-label="Fermer">×</button>
+    </div>
+    <div class="modal-body">
+      <ul>
+        <li>Le but est de battre le croupier en approchant <strong>21</strong> sans le dépasser.</li>
+        <li>Les figures (V, D, R) valent <strong>10</strong>, l'As vaut <strong>11 ou 1</strong> selon ce qui vous arrange.</li>
+        <li>Un <strong>Blackjack</strong> (As + carte de 10) à la distribution paie <strong>3 pour 2</strong>.</li>
+        <li>Le croupier <strong>tire tant qu'il a 16 ou moins</strong> et <strong>s'arrête à 17 ou plus</strong> (y compris 17 doux).</li>
+        <li>Vous pouvez <strong>Tirer</strong> (piocher), <strong>Rester</strong> (garder votre main) ou <strong>Doubler</strong> (doubler la mise, une seule carte de plus) sur vos deux premières cartes.</li>
+        <li>Dépasser 21, c'est un <strong>Bust</strong> : vous perdez immédiatement.</li>
+        <li>Égalité de score = <strong>Push</strong>, votre mise est remboursée.</li>
+        <li>La partie se joue avec un <strong>sabot de 6 jeux de 52 cartes</strong> (312 cartes, sans joker), mélangé de façon cryptographiquement aléatoire.</li>
+        <li>Une <strong>carte de coupe</strong> est placée à la moitié du sabot : dès qu'il ne reste plus que <strong>156 cartes</strong> (50%), le croupier annonce un <strong>nouveau sabot</strong> et remélange les 312 cartes avant la manche suivante — jamais en pleine main.</li>
+        <li>Le nombre de cartes restantes s'affiche sur le sabot, pour s'entraîner au <strong>comptage de cartes</strong>.</li>
+      </ul>
+      <p class="modal-note">Jeu 100% gratuit, à but purement ludique — aucune monnaie réelle n'est utilisée.</p>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
