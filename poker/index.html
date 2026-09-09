@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Poker Texas Hold'em</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>♣️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="table-room">
+  <div class="vignette"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <a class="back-link" href="../index.html" title="Retour au Blackjack" aria-label="Retour au Blackjack">←</a>
+      <span class="brand-icon">♣</span>
+      <span class="brand-name">Maison<span class="accent">21</span> <small>Poker</small></span>
+    </div>
+    <div class="bankroll-pill">
+      <span class="chip-dot"></span>
+      <span id="bankroll">1000</span>
+      <span class="currency">jetons</span>
+    </div>
+    <button class="icon-btn" id="rulesBtn" title="Règles du jeu" aria-label="Règles du jeu">?</button>
+  </header>
+
+  <main class="felt" id="felt">
+    <div class="felt-arc-text">TEXAS HOLD'EM · 6 PLACES</div>
+    <div class="felt-sub-text" id="handSubText">Blinds 10 / 20</div>
+
+    <div class="poker-oval"></div>
+
+    <section class="ai-row" id="aiRow"><!-- sièges IA générés en JS --></section>
+
+    <div class="center-zone">
+      <div class="community-cards" id="communityCards"></div>
+      <div class="pot-display" id="potDisplay">
+        <span class="pot-label">Pot</span>
+        <span id="potAmount">0</span>
+      </div>
+      <div class="dealer-callout" id="dealerCallout"></div>
+      <div class="center-status" id="centerStatus">
+        <div class="status-message" id="statusMessage">Bienvenue à la table de Poker</div>
+      </div>
+    </div>
+
+    <section class="seat player-seat" id="playerSeat">
+      <div class="cards" id="playerCards"></div>
+      <div class="seat-label">
+        <span class="player-tag" id="playerDealerTag"></span>
+        <span>Vous</span>
+        <span class="hand-score" id="playerBestHand"></span>
+      </div>
+      <div class="stack-row">
+        <span class="seat-stack" id="playerStackDisplay">1000</span>
+        <span class="seat-bet" id="playerBetDisplay"></span>
+      </div>
+    </section>
+  </main>
+
+  <footer class="control-deck">
+    <div class="raise-zone" id="raiseZone" hidden>
+      <div class="raise-readout">
+        <span class="bet-label">Relance à</span>
+        <span class="bet-amount" id="raiseAmountDisplay">0</span>
+      </div>
+      <input type="range" id="raiseSlider" class="raise-slider" min="0" max="0" step="1" value="0">
+      <div class="raise-presets">
+        <button class="btn btn-ghost btn-sm" id="presetHalfPot">1/2 pot</button>
+        <button class="btn btn-ghost btn-sm" id="presetPot">Pot</button>
+        <button class="btn btn-ghost btn-sm" id="presetAllin">Tapis</button>
+      </div>
+      <div class="raise-confirm">
+        <button class="btn btn-ghost" id="cancelRaiseBtn">Annuler</button>
+        <button class="btn btn-primary" id="confirmRaiseBtn">Valider la relance</button>
+      </div>
+    </div>
+
+    <div class="game-actions" id="gameActions" hidden>
+      <button class="btn btn-action btn-fold" id="foldBtn">Se coucher</button>
+      <button class="btn btn-action btn-check" id="checkCallBtn">Parole</button>
+      <button class="btn btn-action btn-raise" id="raiseBtn">Relancer</button>
+    </div>
+
+    <div class="start-zone" id="startZone">
+      <button class="btn btn-primary" id="startHandBtn">Distribuer la main</button>
+    </div>
+  </footer>
+</div>
+
+<div class="modal-backdrop" id="rulesModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Règles du Texas Hold'em</h2>
+      <button class="icon-btn" id="closeRulesBtn" aria-label="Fermer">×</button>
+    </div>
+    <div class="modal-body">
+      <ul>
+        <li>Chaque joueur reçoit <strong>2 cartes privées</strong>. <strong>5 cartes communes</strong> sont posées au centre : le <strong>flop</strong> (3), le <strong>turn</strong> (1) et la <strong>rivière</strong> (1).</li>
+        <li>Le but est de former la <strong>meilleure main de 5 cartes</strong> en combinant vos cartes privées et les cartes communes.</li>
+        <li>Ordre des mains, de la plus forte à la plus faible : <strong>Quinte flush royale</strong>, Quinte flush, Carré, Full, Couleur, Suite, Brelan, Double paire, Paire, Carte haute.</li>
+        <li>Un <strong>bouton donneur</strong> (D) se déplace d'un joueur à chaque main. Les deux joueurs suivants postent la <strong>petite blind</strong> et la <strong>grosse blind</strong> avant de voir leurs cartes.</li>
+        <li>À chaque tour de mise, vous pouvez <strong>suivre</strong> (payer la mise en cours), <strong>relancer</strong> (augmenter la mise), ou <strong>vous coucher</strong> (abandonner la main). Si personne n'a misé, vous pouvez faire <strong>parole</strong> (passer sans miser).</li>
+        <li>Si tous les autres joueurs se couchent, le dernier joueur en lice remporte le pot sans montrer ses cartes.</li>
+        <li>À la <strong>rivière</strong>, s'il reste plusieurs joueurs, c'est l'<strong>abattage</strong> : les mains sont comparées et la meilleure remporte le pot.</li>
+        <li>Un joueur qui mise tout son tapis est <strong>all-in</strong> ; s'il a moins de jetons que les autres, un <strong>pot annexe</strong> est créé pour les mises excédentaires des autres joueurs.</li>
+        <li>Votre solde de jetons est sauvegardé automatiquement. Si vous tombez à <strong>0 jeton</strong>, un rachat vous est proposé.</li>
+      </ul>
+      <p class="modal-note">Jeu 100% gratuit, à but purement ludique — aucune monnaie réelle n'est utilisée.</p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="rebuyModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Tapis vide</h2>
+    </div>
+    <div class="modal-body">
+      <p>Vous n'avez plus de jetons devant vous. La maison vous offre un rachat pour continuer à jouer.</p>
+      <div class="rebuy-actions">
+        <button class="btn btn-primary" id="rebuyBtn">Racheter 1000 jetons</button>
+      </div>
+      <p class="modal-note">Jeu 100% gratuit — le rachat ne coûte rien, il réinitialise simplement votre solde.</p>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="script.js"></script>
+</body>
+</html>
