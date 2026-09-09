@@ -49,6 +49,7 @@ const els = {
   hitBtn: document.getElementById('hitBtn'),
   standBtn: document.getElementById('standBtn'),
   doubleBtn: document.getElementById('doubleBtn'),
+  splitBtn: document.getElementById('splitBtn'),
   waitingNote: document.getElementById('waitingNote'),
   dealerCards: document.getElementById('dealerCards'),
   dealerScore: document.getElementById('dealerScore'),
@@ -131,17 +132,19 @@ function renderCardsIncremental(container, cardsData, cacheKey, holeRevealed) {
   if (holeRevealed !== undefined) cache.holeRevealed = holeRevealed;
 }
 
-function labelForHand(total, isSoft, cardsLength, state) {
+function labelForHand(total, isSoft, cardsLength, state, fromSplit) {
   if (cardsLength === 0) return '';
-  if (state === 'blackjack' || (cardsLength === 2 && total === 21)) return 'Blackjack !';
+  // Une main issue d'un split n'est jamais un blackjack naturel, même à 21
+  // avec 2 cartes (paie 1:1, pas 3:2) : on affiche juste le total.
+  if (!fromSplit && (state === 'blackjack' || (cardsLength === 2 && total === 21))) return 'Blackjack !';
   if (total > 21) return `${total} — Sauté`;
   return isSoft && total !== 21 ? `${total} (souple)` : `${total}`;
 }
 
-function applyScoreBadgeClasses(el, total, cardsLength) {
+function applyScoreBadgeClasses(el, total, cardsLength, fromSplit) {
   el.className = 'hand-score';
   if (total > 21) el.classList.add('bust');
-  if (cardsLength === 2 && total === 21) el.classList.add('blackjack');
+  if (!fromSplit && cardsLength === 2 && total === 21) el.classList.add('blackjack');
 }
 
 // ---------- Rendu du croupier ----------
@@ -211,8 +214,8 @@ function renderHandsRow(state) {
       renderCardsIncremental(cardsEl, hand.cards, key, undefined);
 
       const scoreEl = pod.querySelector('.hand-score');
-      scoreEl.textContent = labelForHand(hand.total, hand.isSoft, hand.cards.length, hand.state);
-      applyScoreBadgeClasses(scoreEl, hand.total, hand.cards.length);
+      scoreEl.textContent = labelForHand(hand.total, hand.isSoft, hand.cards.length, hand.state, hand.fromSplit);
+      applyScoreBadgeClasses(scoreEl, hand.total, hand.cards.length, hand.fromSplit);
 
       const betEl = pod.querySelector('.hand-pod-bet');
       betEl.textContent = hand.bet > 0 ? `Mise : ${hand.bet.toLocaleString('fr-FR')}` : '';
@@ -370,6 +373,15 @@ function render(state) {
   els.hitBtn.disabled = !myTurn;
   els.standBtn.disabled = !myTurn;
   els.doubleBtn.disabled = !myTurn || !activeHandMine || (bankroll < (activeHandMine ? activeHandMine.bet : Infinity));
+
+  const canSplit = !!(myTurn && activeHandMine && me
+    && activeHandMine.cards.length === 2
+    && activeHandMine.cards[0].rank === activeHandMine.cards[1].rank
+    && me.hands.length < MAX_HANDS
+    && bankroll >= activeHandMine.bet);
+  els.splitBtn.hidden = !myTurn;
+  els.splitBtn.disabled = !canSplit;
+
   els.waitingNote.hidden = myTurn || !showActions;
 }
 
@@ -440,6 +452,7 @@ els.addHandBtn.addEventListener('click', () => send({ type: 'addHand' }));
 els.hitBtn.addEventListener('click', () => send({ type: 'hit' }));
 els.standBtn.addEventListener('click', () => send({ type: 'stand' }));
 els.doubleBtn.addEventListener('click', () => send({ type: 'double' }));
+els.splitBtn.addEventListener('click', () => { if (!els.splitBtn.disabled) send({ type: 'split' }); });
 
 els.rulesBtn.addEventListener('click', () => els.rulesModal.classList.add('open'));
 els.closeRulesBtn.addEventListener('click', () => els.rulesModal.classList.remove('open'));
@@ -454,6 +467,7 @@ document.addEventListener('keydown', (e) => {
     if (e.key.toLowerCase() === 'h') send({ type: 'hit' });
     if (e.key.toLowerCase() === 's') send({ type: 'stand' });
     if (e.key.toLowerCase() === 'd' && !els.doubleBtn.disabled) send({ type: 'double' });
+    if (e.key.toLowerCase() === 'p' && !els.splitBtn.disabled) send({ type: 'split' });
   }
 });
 

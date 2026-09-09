@@ -704,6 +704,7 @@ button { font-family: inherit; cursor: pointer; }
 .btn-action:hover:not(:disabled) { filter: brightness(1.12); }
 #standBtn { background: linear-gradient(180deg, #c0392b, #922019); }
 #doubleBtn { background: linear-gradient(180deg, #2c6e49, #1f5236); }
+#splitBtn { background: linear-gradient(180deg, #6a4fa8, #4a3277); }
 #nextRoundBtn { background: linear-gradient(180deg, var(--gold-bright), var(--gold)); color: #2a1c04; box-shadow: 0 4px 0 rgba(0,0,0,0.25), 0 6px 14px rgba(0,0,0,0.3); }
 
 /* ===== Modal ===== */

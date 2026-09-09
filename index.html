@@ -86,6 +86,7 @@
       <button class="btn btn-action" id="hitBtn">Tirer</button>
       <button class="btn btn-action" id="standBtn">Rester</button>
       <button class="btn btn-action" id="doubleBtn">Doubler</button>
+      <button class="btn btn-action" id="splitBtn">Séparer</button>
       <div class="waiting-note" id="waitingNote" hidden>En attente des autres joueurs…</div>
     </div>
   </footer>
@@ -104,6 +105,7 @@
         <li>Un <strong>Blackjack</strong> (As + carte de 10) à la distribution paie <strong>3 pour 2</strong>.</li>
         <li>Le croupier <strong>tire tant qu'il a 16 ou moins</strong> et <strong>s'arrête à 17 ou plus</strong> (y compris 17 doux).</li>
         <li>Vous pouvez <strong>Tirer</strong> (piocher), <strong>Rester</strong> (garder votre main) ou <strong>Doubler</strong> (doubler la mise, une seule carte de plus) sur vos deux premières cartes.</li>
+        <li>Si vos deux premières cartes ont le <strong>même rang</strong> (deux 8, deux Dames…), vous pouvez <strong>Séparer</strong> : elles deviennent deux mains distinctes, chacune complétée d'une carte et misée du même montant que la main d'origine. Chaque main se joue ensuite indépendamment, et vous pouvez re-séparer si une nouvelle paire apparaît (jusqu'à 4 mains au total). <strong>Exception</strong> : en séparant deux As, chaque main ne reçoit qu'une seule carte supplémentaire puis reste automatiquement, et un 21 obtenu de cette façon paie <strong>1 pour 1</strong> (comme un 21 normal), pas 3 pour 2 — ce n'est pas un blackjack naturel.</li>
         <li>Dépasser 21, c'est un <strong>Bust</strong> : vous perdez immédiatement.</li>
         <li>Égalité de score = <strong>Push</strong>, votre mise est remboursée.</li>
         <li>Table <strong>partagée</strong> : tout le monde joue contre le même croupier. Vous pouvez ouvrir jusqu'à <strong>4 mains</strong> à la fois avec le bouton « + Ajouter une main ». Chaque manche démarre par une phase de mise chronométrée, puis chaque main de chaque joueur se joue à tour de rôle.</li>

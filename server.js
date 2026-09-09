@@ -234,6 +234,7 @@ function serializeState() {
         payout: h.payout,
         total: h.cards.length ? handValue(h.cards).total : 0,
         isSoft: h.cards.length ? handValue(h.cards).isSoft : false,
+        fromSplit: !!h.fromSplit,
       })),
     })),
     shoe: {
@@ -322,7 +323,7 @@ async function runTableLoop() {
         const hand = getPlayer(playerId).hands[handIndex];
         if (isBlackjack(hand.cards)) hand.state = 'blackjack';
       });
-      await playingPhase();
+      await playingPhase(activeEntries);
       await dealerPhase();
       resolveAllHands(activeEntries);
     }
@@ -405,13 +406,30 @@ async function dealingPhase(activeEntries) {
   broadcastState();
 }
 
-async function playingPhase() {
+// `activeEntries` est la liste maîtresse (mutable) des mains en jeu pour la
+// manche en cours ; `table.turnOrder` en est un sous-ensemble filtré qui
+// partage les MÊMES références d'objets (issu d'un .filter()). Un split
+// modifie donc les deux structures à la fois quand on touche `e.handIndex`.
+async function playingPhase(activeEntries) {
   table.phase = 'playing';
-  for (const { playerId, handIndex } of table.turnOrder) {
+  let i = 0;
+  while (i < table.turnOrder.length) {
+    const entry = table.turnOrder[i];
+    const playerId = entry.playerId;
+    const handIndex = entry.handIndex;
     const player = getPlayer(playerId);
-    if (!player) continue;
-    const hand = player.hands[handIndex];
-    if (!hand || hand.state === 'bust' || hand.state === 'blackjack') continue;
+    if (!player) { i++; continue; }
+    let hand = player.hands[handIndex];
+    if (!hand || hand.state === 'bust' || hand.state === 'blackjack' || hand.autoStood) { i++; continue; }
+
+    // Une main issue d'un split peut totaliser 21 dès sa création (pas un
+    // blackjack naturel) : elle reste automatiquement, comme un 21 obtenu
+    // en tirant, sans qu'on lui redemande une action.
+    if (hand.fromSplit && hand.cards.length === 2 && handValue(hand.cards).total === 21) {
+      hand.state = 'stood';
+      broadcastState();
+      i++; continue;
+    }
 
     table.activeTurn = { playerId, handIndex };
     table.statusMessage = `${player.name} joue sa main`;
@@ -421,6 +439,8 @@ async function playingPhase() {
     let turnOver = false;
     while (!turnOver) {
       const action = await waitForPlayerAction(playerId, handIndex);
+      hand = player.hands[handIndex];
+      if (!hand) { turnOver = true; break; }
 
       if (action === 'hit') {
         hand.cards.push(drawCard());
@@ -447,6 +467,62 @@ async function playingPhase() {
           turnOver = true;
         }
         // mise insuffisante : on redemande une action (double refusé silencieusement)
+      } else if (action === 'split') {
+        const canSplit = hand.cards.length === 2
+          && hand.cards[0].rank === hand.cards[1].rank
+          && player.hands.length < MAX_HANDS_PER_PLAYER;
+        const rec = getOrCreatePlayerRecord(playerId);
+        if (canSplit && rec.bankroll >= hand.bet) {
+          const isAceSplit = hand.cards[0].rank === 'A';
+          const betAmount = hand.bet;
+          rec.bankroll -= betAmount;
+          savePlayersDB();
+
+          const handA = {
+            bet: betAmount, cards: [hand.cards[0], drawCard()],
+            state: 'playing', result: null, payout: 0, doubled: false,
+            fromSplit: true, autoStood: false,
+          };
+          const handB = {
+            bet: betAmount, cards: [hand.cards[1], drawCard()],
+            state: 'playing', result: null, payout: 0, doubled: false,
+            fromSplit: true, autoStood: false,
+          };
+
+          if (isAceSplit) {
+            // Split d'As : une seule carte chacune, puis reste imposé —
+            // pas de tirer/doubler/re-split possible sur ces mains.
+            handA.state = 'stood'; handA.autoStood = true;
+            handB.state = 'stood'; handB.autoStood = true;
+          }
+
+          // Remplace la main d'origine par les deux nouvelles, à sa place.
+          player.hands.splice(handIndex, 1, handA, handB);
+
+          // Décale les index des autres mains de CE joueur situées après
+          // la main splittée (toute la liste des mains de ce joueur a
+          // grandi de 1 à partir de handIndex+1).
+          for (const e of activeEntries) {
+            if (e.playerId === playerId && e.handIndex > handIndex) e.handIndex += 1;
+          }
+
+          // Insère l'entrée de la seconde main juste après la main
+          // courante dans l'ordre de jeu, pour qu'elle soit jouée juste
+          // après (avant de passer au joueur suivant).
+          const newEntry = { playerId, handIndex: handIndex + 1 };
+          activeEntries.push(newEntry);
+          table.turnOrder.splice(i + 1, 0, newEntry);
+
+          hand = handA; // on continue de jouer la première moitié tout de suite
+          broadcastState();
+
+          if (hand.state !== 'stood' && handValue(hand.cards).total === 21) {
+            hand.state = 'stood';
+          }
+          if (hand.state === 'stood') turnOver = true;
+        }
+        // split refusé (silencieusement) : paire invalide, limite de mains
+        // atteinte ou solde insuffisant -> on redemande une action.
       } else {
         // 'stand' ou action inconnue -> on reste
         hand.state = 'stood';
@@ -455,6 +531,7 @@ async function playingPhase() {
     }
     broadcastState();
     await delay(300);
+    i++;
   }
   table.activeTurn = null;
 }
@@ -494,7 +571,9 @@ function resolveAllHands(activeEntries) {
     const hand = player.hands[handIndex];
     if (!hand) continue;
     const playerVal = handValue(hand.cards);
-    const playerBJ = isBlackjack(hand.cards);
+    // Une main issue d'un split n'est jamais un blackjack naturel (paie 1:1
+    // même à 21), y compris pour un split de deux As.
+    const playerBJ = !hand.fromSplit && isBlackjack(hand.cards);
 
     let outcome, payout;
     if (playerBJ && dealerBJ) { outcome = 'push'; payout = hand.bet; }
@@ -524,8 +603,30 @@ function resolveAllHands(activeEntries) {
   else { table.statusMessage = 'Manche terminée'; table.statusKind = 'push'; dealerSay('Manche terminée, on recompte les jetons.'); }
 }
 
+// Après un split, un groupe de mains adjacentes est marqué `fromSplit`.
+// En fin de manche on réduit chaque groupe contigu à une seule main
+// "propre", pour retrouver exactement le nombre de mains que le joueur
+// avait choisi via "+ Ajouter une main" avant que le split ne les duplique.
+function collapseSplitGroups(hands) {
+  const result = [];
+  let i = 0;
+  while (i < hands.length) {
+    if (hands[i].fromSplit) {
+      while (i < hands.length && hands[i].fromSplit) i++;
+      result.push(newHand());
+    } else {
+      result.push(hands[i]);
+      i++;
+    }
+  }
+  return result;
+}
+
 function resetForNextRound() {
   for (const player of players.values()) {
+    if (player.hands.some((h) => h.fromSplit)) {
+      player.hands = collapseSplitGroups(player.hands);
+    }
     player.hands.forEach((hand) => {
       hand.bet = 0;
       hand.cards = [];
@@ -533,6 +634,8 @@ function resetForNextRound() {
       hand.result = null;
       hand.payout = 0;
       hand.doubled = false;
+      hand.fromSplit = false;
+      hand.autoStood = false;
     });
   }
   table.dealerHand = [];
@@ -626,7 +729,8 @@ wss.on('connection', (ws) => {
       }
       case 'hit':
       case 'stand':
-      case 'double': {
+      case 'double':
+      case 'split': {
         if (table.phase !== 'playing') return;
         if (!table.activeTurn || table.activeTurn.playerId !== playerId) return;
         submitAction(playerId, table.activeTurn.handIndex, msg.type);
