@@ -1,0 +1,329 @@
+/* ===============================================================
+   ROULETTE — styles spécifiques, prolongeant les tokens de
+   ../style.css (feutre, or, crème, panneaux, jetons, boutons...).
+   =============================================================== */
+
+/* La roulette a besoin de défiler verticalement (tapis large +
+   roue + historique) contrairement au blackjack figé en 100vh. */
+html, body {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.table-room {
+  height: auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+.felt {
+  overflow: visible;
+  flex: none;
+  padding: 4px 12px 10px;
+}
+.control-deck {
+  position: relative;
+}
+
+/* ===== Lien retour ===== */
+.back-link {
+  text-decoration: none;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+.brand-sub {
+  font-family: var(--font-body);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(244, 234, 217, 0.55);
+  align-self: center;
+  border-left: 1px solid var(--panel-border);
+  padding-left: 8px;
+  margin-left: 2px;
+}
+
+/* ===== Historique des numéros ===== */
+.history-strip {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 4px 4px 2px;
+  margin-top: 40px;
+  min-height: 30px;
+}
+.history-chip {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: var(--cream);
+  border: 1.5px solid rgba(244, 234, 217, 0.35);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+  animation: popIn 0.35s cubic-bezier(.3,1.6,.4,1) both;
+  flex-shrink: 0;
+}
+.history-chip.red-n { background: linear-gradient(160deg, var(--red-bright), var(--red)); }
+.history-chip.black-n { background: linear-gradient(160deg, #3a3a3a, #161616); }
+.history-chip.green-n { background: linear-gradient(160deg, #1f6b4a, #0e4530); }
+
+/* ===== Zone roue ===== */
+.wheel-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.wheel-wrap {
+  position: relative;
+  width: 236px;
+  height: 236px;
+  margin: 2px auto;
+}
+
+.wheel-pointer {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0; height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 12px solid var(--gold-bright);
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5));
+  z-index: 8;
+}
+
+.wheel {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 6px solid var(--wood);
+  box-shadow:
+    0 12px 30px rgba(0,0,0,0.55),
+    inset 0 0 0 2px rgba(212,175,90,0.4),
+    inset 0 0 18px rgba(0,0,0,0.5);
+  transform: rotate(0deg);
+  transition: transform 4.4s cubic-bezier(.13,.83,.24,1);
+  z-index: 2;
+}
+
+.wheel-number {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  font-size: 0.56rem;
+  font-weight: 800;
+  color: var(--cream);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+}
+.wheel-number span {
+  position: absolute;
+  left: -8px;
+  top: -104px;
+  width: 16px;
+  text-align: center;
+  display: block;
+}
+
+.ball-track {
+  position: absolute;
+  inset: 14px;
+  border-radius: 50%;
+  z-index: 5;
+  pointer-events: none;
+}
+.ball-pivot {
+  position: absolute;
+  inset: 0;
+  transform: rotate(0deg);
+  transition: transform 4.6s cubic-bezier(.1,.7,.15,1);
+}
+.ball {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, #d8d8d8 60%, #999 100%);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.6);
+}
+
+.wheel-hub {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 46px; height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--gold-bright), var(--gold) 55%, #8a6a2a 100%);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5), inset 0 0 0 2px rgba(0,0,0,0.25);
+  z-index: 6;
+}
+
+.wheel-zone .center-status { min-height: 30px; }
+.wheel-zone .status-message { font-size: clamp(0.9rem, 2.4vw, 1.15rem); padding: 4px 18px; }
+
+/* ===== Tapis de mises ===== */
+.board-scroll {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+}
+
+.board {
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  margin: 0 auto;
+  gap: 2px;
+}
+
+.board-numbers { display: flex; gap: 2px; }
+
+.cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: 0.72rem;
+  color: var(--cream);
+  background: linear-gradient(160deg, var(--felt-1), var(--felt-2));
+  border: 1px solid rgba(244, 234, 217, 0.22);
+  border-radius: 3px;
+  cursor: pointer;
+  user-select: none;
+  transition: filter 0.12s ease, transform 0.08s ease;
+}
+.cell:hover { filter: brightness(1.25); }
+.cell:active { transform: scale(0.95); }
+
+.cell.num-red { background: linear-gradient(160deg, var(--red-bright), var(--red)); }
+.cell.num-black { background: linear-gradient(160deg, #3a3a3a, #161616); }
+.cell.zero-cell {
+  background: linear-gradient(160deg, #1f6b4a, #0e4530);
+  border-radius: 6px 3px 3px 6px;
+  width: 34px;
+}
+
+.number-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 38px);
+  grid-template-rows: repeat(3, 38px);
+  gap: 2px;
+}
+
+.column-bets {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.column-bets .cell {
+  width: 44px;
+  height: 38px;
+  font-size: 0.58rem;
+  letter-spacing: 0.02em;
+  background: linear-gradient(160deg, var(--felt-1), var(--felt-2));
+}
+
+.dozens-row, .outside-row {
+  display: flex;
+  gap: 2px;
+  margin-left: 36px;
+}
+.dozens-row .cell {
+  width: 154px;
+  height: 32px;
+  font-size: 0.66rem;
+  letter-spacing: 0.02em;
+}
+.outside-row .cell {
+  width: 76px;
+  height: 32px;
+  font-size: 0.66rem;
+  letter-spacing: 0.03em;
+}
+.outside-row .cell.outside-red { background: linear-gradient(160deg, var(--red-bright), var(--red)); }
+.outside-row .cell.outside-black { background: linear-gradient(160deg, #3a3a3a, #161616); }
+
+/* pastille de mise empilée sur une case */
+.bet-badge {
+  position: absolute;
+  bottom: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 30%, var(--gold-bright), var(--gold) 60%, #8a6a2a 100%);
+  color: #2a1c04;
+  font-size: 0.6rem;
+  font-weight: 800;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid rgba(255,255,255,0.55);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.45);
+  z-index: 3;
+  animation: popIn 0.2s ease both;
+}
+.bet-badge.show { display: flex; }
+
+/* résultat : mise gagnante / perdante mise en évidence */
+.cell.bet-win { outline: 2px solid var(--green-win); outline-offset: -2px; }
+.cell.bet-lose { outline: 2px solid rgba(231, 76, 60, 0.55); outline-offset: -2px; }
+.cell.winning-number { animation: winPulse 1s ease-in-out 2; }
+@keyframes winPulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.8); }
+}
+
+.board.locked .cell { cursor: not-allowed; pointer-events: none; opacity: 0.85; }
+
+/* ===== Jeton sélectionné ===== */
+.chip.active { box-shadow: 0 0 0 3px var(--gold-bright), 0 6px 0 rgba(0,0,0,0.28), 0 8px 16px rgba(0,0,0,0.35); transform: translateY(-2px); }
+
+/* ===== Responsive ===== */
+@media (max-width: 480px) {
+  .wheel-wrap { width: 190px; height: 190px; }
+  .wheel-number span { top: -83px; font-size: 0.5rem; }
+  .ball-track { inset: 12px; }
+  .wheel-hub { width: 36px; height: 36px; margin: -18px 0 0 -18px; }
+  .number-grid { grid-template-columns: repeat(12, 32px); grid-template-rows: repeat(3, 32px); }
+  .zero-cell { width: 28px; }
+  .column-bets .cell { width: 36px; height: 32px; font-size: 0.5rem; }
+  .dozens-row, .outside-row { margin-left: 30px; }
+  .dozens-row .cell { width: 130px; height: 28px; font-size: 0.58rem; }
+  .outside-row .cell { width: 64px; height: 28px; font-size: 0.56rem; }
+  .history-strip { min-height: 26px; }
+  .history-chip { width: 22px; height: 22px; font-size: 0.58rem; }
+  .brand-sub { display: none; }
+
+  /* La roulette ajoute un 4e élément (lien retour) au topbar : on
+     resserre pour que tout tienne sur une seule ligne en mobile. */
+  .topbar { padding: 10px 10px; gap: 6px; flex-wrap: nowrap; }
+  .icon-btn { width: 32px; height: 32px; font-size: 0.95rem; flex-shrink: 0; }
+  .brand { gap: 4px; }
+  .brand-icon { font-size: 1.15rem; }
+  .bankroll-pill { padding: 5px 10px; gap: 5px; font-size: 0.82rem; }
+}
+
+@media (max-height: 760px) {
+  .wheel-wrap { width: 180px; height: 180px; }
+  .wheel-number span { top: -78px; }
+  .ball-track { inset: 11px; }
+}
