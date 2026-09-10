@@ -1012,6 +1012,37 @@ els.rebuyBtn.addEventListener('click', () => {
   showToast('Rachat effectué : 1000 jetons crédités.');
 });
 
+// ---------- Menu inter-jeux ----------
+// Petit panneau dupliqué à l'identique sur les 4 pages du site (lobby,
+// blackjack, roulette, poker) pour changer de jeu en un clic, sans repasser
+// par l'accueil. Pas de dépendance à un module JS partagé : logique simple
+// et autonome, cohérente partout.
+(function initGameMenu() {
+  const btn = document.getElementById('gameMenuBtn');
+  const panel = document.getElementById('gameMenuPanel');
+  if (!btn || !panel) return;
+
+  function closeMenu() {
+    panel.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+  }
+  function openMenu() {
+    panel.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+  }
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (panel.hidden) openMenu(); else closeMenu();
+  });
+  document.addEventListener('click', (e) => {
+    if (!panel.hidden && !panel.contains(e.target) && e.target !== btn) closeMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeMenu();
+  });
+})();
+
 // ============================================================
 // INITIALISATION
 // ============================================================

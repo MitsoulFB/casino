@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Maison21 — Casino</title>
+<meta name="description" content="Maison21 : casino gratuit en ligne — Blackjack multijoueur, Roulette européenne et Poker Texas Hold'em, à but purement ludique.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>♠️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="vignette"></div>
+
+<div class="hall">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">♠</span>
+      <span class="brand-name">Maison<span class="accent">21</span></span>
+      <span class="brand-sub">Casino</span>
+    </div>
+    <div class="topbar-right">
+      <!-- Menu inter-jeux : identique sur les 4 pages du site -->
+      <div class="game-menu">
+        <button class="icon-btn" id="gameMenuBtn" title="Changer de jeu" aria-label="Changer de jeu" aria-haspopup="true" aria-expanded="false">🎲</button>
+        <div class="game-menu-panel" id="gameMenuPanel" hidden>
+          <span class="game-menu-item current"><span class="gm-icon">🏠</span><span>Accueil</span></span>
+          <div class="game-menu-sep"></div>
+          <a class="game-menu-item" href="blackjack/"><span class="gm-icon">🃏</span><span>Blackjack</span></a>
+          <a class="game-menu-item" href="roulette/"><span class="gm-icon">🎡</span><span>Roulette</span></a>
+          <a class="game-menu-item" href="poker/"><span class="gm-icon">♣️</span><span>Poker Texas Hold'em</span></a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="hall-main">
+
+    <section class="hero">
+      <p class="hero-kicker">— Bienvenue à —</p>
+      <h1 class="hero-title">La Maison<span class="accent">21</span></h1>
+      <p class="hero-tagline">Un salon de jeux 100% gratuit, à l'ambiance feutrée d'un vrai casino.</p>
+
+      <div class="host-note">
+        <span class="host-avatar">🎩</span>
+        <p class="host-text">
+          « Bonsoir, et bienvenue chez moi. Ici, chaque table est ouverte, les jetons sont offerts par la maison,
+          et seule compte l'ivresse du jeu. Choisissez votre table : le Blackjack pour les esprits vifs,
+          la Roulette pour les âmes joueuses, ou le Poker pour les fins stratèges. Je vous souhaite une
+          excellente soirée — et que la chance vous accompagne. »
+        </p>
+        <span class="host-sign">— Le maître de maison</span>
+      </div>
+    </section>
+
+    <section class="game-hall" aria-label="Choix du jeu">
+
+      <a class="game-card" href="blackjack/">
+        <div class="game-card-art card-art-blackjack" aria-hidden="true">
+          <span class="art-suit">♠</span>
+          <span class="art-card art-card-1">A</span>
+          <span class="art-card art-card-2">K</span>
+        </div>
+        <div class="game-card-body">
+          <h2>Blackjack</h2>
+          <p class="game-card-desc">Table partagée multijoueur en temps réel. Approchez 21, séparez vos paires, doublez vos mises — face à un vrai sabot de 6 jeux.</p>
+          <span class="game-card-tags">
+            <span class="tag">Multijoueur</span>
+            <span class="tag">Table partagée</span>
+          </span>
+        </div>
+        <span class="game-card-cta">Entrer à la table <span class="cta-arrow">→</span></span>
+      </a>
+
+      <a class="game-card" href="roulette/">
+        <div class="game-card-art card-art-roulette" aria-hidden="true">
+          <span class="art-wheel"></span>
+        </div>
+        <div class="game-card-body">
+          <h2>Roulette</h2>
+          <p class="game-card-desc">Roulette européenne, zéro unique. Pleins, chevaux, transversales, douzaines… placez vos jetons et lancez la bille.</p>
+          <span class="game-card-tags">
+            <span class="tag">Solo</span>
+            <span class="tag">37 numéros</span>
+          </span>
+        </div>
+        <span class="game-card-cta">Faire tourner la roue <span class="cta-arrow">→</span></span>
+      </a>
+
+      <a class="game-card" href="poker/">
+        <div class="game-card-art card-art-poker" aria-hidden="true">
+          <span class="art-suit">♣</span>
+          <span class="art-card art-card-1">Q</span>
+          <span class="art-card art-card-2">10</span>
+        </div>
+        <div class="game-card-body">
+          <h2>Poker</h2>
+          <p class="game-card-desc">Texas Hold'em à 6 places contre des adversaires IA. Bluffez, relancez, et raflez le pot à la table de la maison.</p>
+          <span class="game-card-tags">
+            <span class="tag">Contre l'IA</span>
+            <span class="tag">Texas Hold'em</span>
+          </span>
+        </div>
+        <span class="game-card-cta">S'asseoir à la table <span class="cta-arrow">→</span></span>
+      </a>
+
+    </section>
+
+  </main>
+
+  <footer class="hall-footer">
+    <p>Maison21 — jeux 100% gratuits, à but purement ludique. Aucune monnaie réelle n'est utilisée ni ne peut être gagnée.</p>
+  </footer>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

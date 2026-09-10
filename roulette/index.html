@@ -17,7 +17,7 @@
 <div class="room">
 
   <header class="topbar">
-    <a class="icon-btn back-link" id="backLink" href="../index.html" title="Retour au Blackjack" aria-label="Retour au Blackjack">←</a>
+    <a class="icon-btn back-link" id="backLink" href="../" title="Retour à l'accueil" aria-label="Retour à l'accueil">🏠</a>
     <div class="brand">
       <span class="brand-icon">🎡</span>
       <span class="brand-name">Maison<span class="accent">21</span></span>
@@ -28,6 +28,17 @@
         <span class="chip-dot"></span>
         <span id="bankroll">1000</span>
         <span class="currency">jetons</span>
+      </div>
+      <!-- Menu inter-jeux : permet de changer de jeu en un clic depuis n'importe où -->
+      <div class="game-menu">
+        <button class="icon-btn" id="gameMenuBtn" title="Changer de jeu" aria-label="Changer de jeu" aria-haspopup="true" aria-expanded="false">🎲</button>
+        <div class="game-menu-panel" id="gameMenuPanel" hidden>
+          <a class="game-menu-item" href="../"><span class="gm-icon">🏠</span><span>Accueil</span></a>
+          <div class="game-menu-sep"></div>
+          <a class="game-menu-item" href="../blackjack/"><span class="gm-icon">🃏</span><span>Blackjack</span></a>
+          <span class="game-menu-item current"><span class="gm-icon">🎡</span><span>Roulette</span></span>
+          <a class="game-menu-item" href="../poker/"><span class="gm-icon">♣️</span><span>Poker Texas Hold'em</span></a>
+        </div>
       </div>
       <button class="icon-btn" id="rulesBtn" title="Règles du jeu" aria-label="Règles du jeu">?</button>
     </div>

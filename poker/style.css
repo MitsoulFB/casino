@@ -69,7 +69,8 @@ button { font-family: inherit; cursor: pointer; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
   padding: 14px 22px;
   background: linear-gradient(180deg, rgba(0,0,0,0.35), transparent);
 }
@@ -139,6 +140,46 @@ button { font-family: inherit; cursor: pointer; }
   transition: background 0.15s, transform 0.15s;
 }
 .icon-btn:hover { background: rgba(212,175,90,0.18); transform: scale(1.06); }
+
+/* ===== Menu inter-jeux (identique sur les 4 pages du site) ===== */
+.game-menu { position: relative; }
+.game-menu-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 230px;
+  background: linear-gradient(160deg, #12261d, #0b1a13);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-deep);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 150;
+  transform-origin: top right;
+  animation: gameMenuIn 0.16s cubic-bezier(.2,.9,.3,1.1) both;
+}
+@keyframes gameMenuIn {
+  from { opacity: 0; transform: scale(0.94) translateY(-4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.game-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  color: var(--cream);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: background 0.15s ease;
+}
+a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
+.game-menu-item .gm-icon { font-size: 1.15rem; width: 22px; text-align: center; flex-shrink: 0; }
+.game-menu-item.current { color: var(--gold-bright); background: rgba(212,175,90,0.08); cursor: default; }
+.game-menu-sep { height: 1px; background: rgba(255,255,255,0.08); margin: 4px 6px; }
 
 /* ===== Felt / table surface ===== */
 .felt {
@@ -677,8 +718,15 @@ button { font-family: inherit; cursor: pointer; }
 
 /* ===== Responsive ===== */
 @media (max-width: 480px) {
-  .brand-name { font-size: 0.95rem; }
-  .bankroll-pill { font-size: 0.85rem; padding: 6px 10px; }
+  .topbar { padding: 8px 10px; gap: 6px; flex-wrap: nowrap; }
+  .brand { gap: 5px; }
+  .brand-name { font-size: 0.85rem; }
+  .brand-name small { display: none; }
+  .brand-icon { font-size: 1.2rem; }
+  .bankroll-pill { font-size: 0.78rem; padding: 5px 9px; gap: 5px; }
+  .bankroll-pill .currency { display: none; }
+  .icon-btn { width: 30px; height: 30px; font-size: 0.9rem; }
+  .game-menu-panel { min-width: 190px; right: -6px; }
   .card-slot { width: 54px; height: 76px; margin-left: -18px; }
   .community-cards .card-slot { width: 38px; height: 54px; margin-left: -9px; }
   .ai-cards .card-slot { width: 26px; height: 37px; margin-left: -11px; }
