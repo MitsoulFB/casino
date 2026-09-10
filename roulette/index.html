@@ -24,6 +24,15 @@
       <span class="brand-sub">Roulette Européenne</span>
     </div>
     <div class="topbar-right">
+      <button class="players-pill" id="playersPill" title="Joueurs à la table">
+        <span class="players-dot" id="connDot"></span>
+        <span id="playersCount">0</span>
+        <span class="players-label">à la table</span>
+      </button>
+      <button class="players-pill profile-pill" id="profileBtn" title="Modifier mon pseudo">
+        <span class="profile-icon">✏️</span>
+        <span id="myNameLabel">Joueur</span>
+      </button>
       <div class="bankroll-pill">
         <span class="chip-dot"></span>
         <span id="bankroll">1000</span>
@@ -61,7 +70,8 @@
           <div class="wheel-hub"><span>21</span></div>
         </div>
         <div class="center-status">
-          <div class="status-message" id="statusMessage">Placez vos mises</div>
+          <div class="status-message" id="statusMessage">Connexion à la table…</div>
+          <div class="betting-timer" id="bettingTimer" hidden></div>
         </div>
       </div>
     </section>
@@ -76,7 +86,7 @@
   </main>
 
   <footer class="control-deck">
-    <div class="bet-zone" id="betZone">
+    <div class="bet-zone" id="betZone" hidden>
       <div class="bet-display">
         <span class="bet-label">Mise totale</span>
         <span class="bet-amount" id="betAmount">0</span>
@@ -90,12 +100,12 @@
       <div class="bet-actions">
         <button class="btn btn-ghost" id="undoBetBtn">Annuler</button>
         <button class="btn btn-ghost" id="clearBetBtn">Effacer</button>
-        <button class="btn btn-primary" id="spinBtn" disabled>Lancer</button>
+        <button class="btn btn-primary" id="readyBtn">Je suis prêt</button>
       </div>
     </div>
 
     <div class="game-actions" id="gameActions" hidden>
-      <button class="btn btn-primary" id="nextRoundBtn">Nouveau tour</button>
+      <div class="waiting-note" id="waitingNote">La roue tourne…</div>
     </div>
   </footer>
 </div>
@@ -109,7 +119,9 @@
     <div class="modal-body">
       <ul>
         <li>Roulette <strong>européenne</strong> : 37 cases numérotées de <strong>0 à 36</strong>, un seul zéro.</li>
+        <li><strong>Table partagée</strong> : tous les joueurs connectés misent sur le même tapis pendant la même phase de mise chronométrée, puis la roue tourne en même temps pour tout le monde — même numéro gagnant affiché à tous.</li>
         <li>Choisissez la valeur de votre jeton puis cliquez sur le tapis pour placer une mise. Cliquez plusieurs fois pour empiler.</li>
+        <li>Les mises des autres joueurs apparaissent en temps réel sur le tapis, sous forme de petits jetons portant leurs initiales.</li>
         <li><strong>Plein</strong> (un numéro) : paie <strong>35 contre 1</strong>.</li>
         <li><strong>Cheval / split</strong> (2 numéros adjacents, cliquez sur la bordure commune) : paie <strong>17 contre 1</strong>.</li>
         <li><strong>Transversale / street</strong> (3 numéros d'une même colonne du tapis, cliquez sous la colonne) : paie <strong>11 contre 1</strong>.</li>
@@ -117,11 +129,29 @@
         <li><strong>Rouge/Noir, Pair/Impair, Manque (1-18)/Passe (19-36)</strong> : paient <strong>1 contre 1</strong>.</li>
         <li><strong>Douzaines</strong> (1-12, 13-24, 25-36) et <strong>Colonnes</strong> : paient <strong>2 contre 1</strong>.</li>
         <li>Si la bille tombe sur <strong>0</strong>, toutes les mises extérieures (rouge/noir, pair/impair, manque/passe, douzaines, colonnes) sont perdues, sauf si le 0 est misé en plein ou à cheval avec lui.</li>
-        <li>Utilisez <strong>Annuler</strong> pour retirer votre dernière mise, ou <strong>Effacer</strong> pour tout retirer avant de lancer la bille.</li>
-        <li>Le tirage utilise un générateur <strong>cryptographiquement aléatoire</strong> (crypto.getRandomValues), comme au blackjack.</li>
+        <li>Utilisez <strong>Annuler</strong> pour retirer votre dernière mise, ou <strong>Effacer</strong> pour tout retirer avant le lancer.</li>
+        <li>Cliquez sur <strong>Je suis prêt</strong> une fois vos mises posées : dès que tous les joueurs connectés ayant misé sont prêts, la roue est lancée sans attendre la fin du minuteur.</li>
+        <li>Le tirage utilise un générateur <strong>cryptographiquement aléatoire</strong>, côté serveur, comme au blackjack.</li>
         <li>L'historique des derniers numéros sortis s'affiche au-dessus de la roue.</li>
       </ul>
       <p class="modal-note">Jeu 100% gratuit, à but purement ludique — aucune monnaie réelle n'est utilisée.</p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="profileModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Mon pseudo</h2>
+      <button class="icon-btn" id="closeProfileBtn" aria-label="Fermer">×</button>
+    </div>
+    <div class="modal-body">
+      <label class="profile-modal-label" for="nameInput">Nom affiché à la table</label>
+      <div class="profile-input-row">
+        <input class="profile-input" id="nameInput" type="text" maxlength="18" placeholder="Votre pseudo" autocomplete="off">
+        <button class="btn btn-primary" id="saveNameBtn">Enregistrer</button>
+      </div>
+      <p class="modal-note">Visible par tous les joueurs de la table, en temps réel.</p>
     </div>
   </div>
 </div>

@@ -1,21 +1,27 @@
 'use strict';
 
 /* ============================================================
-   ROULETTE EUROPÉENNE — logique de jeu
-   37 cases (0 à 36, zéro unique). Tirage cryptographiquement
-   aléatoire via crypto.getRandomValues, comme au blackjack.
-   Paiements :
+   ROULETTE EUROPÉENNE — client de la table partagée
+   ------------------------------------------------------------
+   Ce script ne décide plus de rien : le serveur (server.js) fait
+   autorité sur le tirage, la phase de mise chronométrée, le lancer
+   de la roue et les gains de chaque joueur. Le client se contente
+   d'envoyer les actions du joueur (mise, annulation, pseudo…) et de
+   rendre à l'écran chaque "state" reçu par websocket. Reconnexion
+   automatique en cas de coupure, avec resynchronisation complète.
+
+   Règles / paiements (affichage uniquement — calculés côté serveur) :
      - Plein (straight)        35:1
      - Cheval / split          17:1
      - Transversale / street   11:1
      - Carré / corner           8:1
      - Chances simples          1:1  (rouge/noir, pair/impair, manque/passe)
      - Douzaines / colonnes     2:1
-   Le zéro fait perdre toutes les mises extérieures sauf s'il est
-   misé en plein ou à cheval avec lui.
    ============================================================ */
 
-// Ordre réel des cases sur une roue européenne (sens horaire).
+// Ordre réel des cases sur une roue européenne (sens horaire) — uniquement
+// pour l'animation visuelle de la roue, aucune conséquence sur le tirage
+// (qui est décidé par le serveur).
 const WHEEL_ORDER = [
   0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5,
   24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26,
@@ -25,70 +31,76 @@ const POCKET_ANGLE = 360 / POCKET_COUNT;
 
 const RED_NUMBERS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 
-const STORAGE_KEY = 'maison21_roulette_bankroll';
-const START_BANKROLL = 1000;
+const PLAYER_ID_KEY = 'maison21_roulette_playerId';
+const BANKROLL_CACHE_KEY = 'maison21_roulette_bankroll'; // simple cache d'affichage hors-ligne
 const HISTORY_MAX = 12;
+const MAX_TOKENS_SHOWN = 3; // au-delà, on affiche "+N" sur la case
 
-// ---------- State ----------
-let bankroll = loadBankroll();
-let bets = {};        // { betId: montant }
-let betLog = [];       // pile des mises pour "Annuler"
-let selectedChip = 5;
-let state = 'betting'; // betting | spinning | result
-let wheelRotation = 0; // rotation cumulée de la roue (deg)
-let ballRotation = 0;  // rotation cumulée de la bille (deg)
-let history = [];      // derniers numéros sortis
-let dealerCalloutTimer = null;
-let hotspotDefs = [];  // définitions géométriques des mises à cheval / carré
+// ---------- Identité persistante du navigateur ----------
+function loadOrCreatePlayerId() {
+  let id = localStorage.getItem(PLAYER_ID_KEY);
+  if (!id) {
+    id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `p-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    localStorage.setItem(PLAYER_ID_KEY, id);
+  }
+  return id;
+}
+const myPlayerId = loadOrCreatePlayerId();
+
+function cacheBankroll(n) {
+  try { localStorage.setItem(BANKROLL_CACHE_KEY, String(n)); } catch { /* ignore */ }
+}
+function loadCachedBankroll() {
+  const n = parseInt(localStorage.getItem(BANKROLL_CACHE_KEY), 10);
+  return Number.isFinite(n) ? n : 1000;
+}
 
 // ---------- DOM refs ----------
 const els = {
   bankroll: document.getElementById('bankroll'),
   bankrollPill: document.querySelector('.bankroll-pill'),
+  playersCount: document.getElementById('playersCount'),
+  playersPill: document.getElementById('playersPill'),
+  connDot: document.getElementById('connDot'),
+  profileBtn: document.getElementById('profileBtn'),
+  myNameLabel: document.getElementById('myNameLabel'),
   betAmount: document.getElementById('betAmount'),
   chipRack: document.getElementById('chipRack'),
   undoBetBtn: document.getElementById('undoBetBtn'),
   clearBetBtn: document.getElementById('clearBetBtn'),
-  spinBtn: document.getElementById('spinBtn'),
+  readyBtn: document.getElementById('readyBtn'),
   betZone: document.getElementById('betZone'),
   gameActions: document.getElementById('gameActions'),
-  nextRoundBtn: document.getElementById('nextRoundBtn'),
+  waitingNote: document.getElementById('waitingNote'),
   board: document.getElementById('board'),
   statusMessage: document.getElementById('statusMessage'),
+  bettingTimer: document.getElementById('bettingTimer'),
   toast: document.getElementById('toast'),
   rulesBtn: document.getElementById('rulesBtn'),
   closeRulesBtn: document.getElementById('closeRulesBtn'),
   rulesModal: document.getElementById('rulesModal'),
+  profileModal: document.getElementById('profileModal'),
+  closeProfileBtn: document.getElementById('closeProfileBtn'),
+  nameInput: document.getElementById('nameInput'),
+  saveNameBtn: document.getElementById('saveNameBtn'),
   dealerCallout: document.getElementById('dealerCallout'),
   wheel: document.getElementById('wheel'),
   ballPivot: document.getElementById('ballPivot'),
   historyStrip: document.getElementById('historyStrip'),
 };
 
-// ---------- Persistence ----------
-function loadBankroll() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  const n = saved !== null ? parseInt(saved, 10) : NaN;
-  return Number.isFinite(n) && n >= 0 ? n : START_BANKROLL;
-}
-function saveBankroll() {
-  localStorage.setItem(STORAGE_KEY, String(bankroll));
-}
-
-// ---------- Random source ----------
-// Flottant [0,1) via crypto.getRandomValues (repli Math.random),
-// même approche que le blackjack, pour un tirage fiable.
-function secureRandom() {
-  if (window.crypto && window.crypto.getRandomValues) {
-    const buf = new Uint32Array(1);
-    window.crypto.getRandomValues(buf);
-    return buf[0] / 4294967296; // 2^32
-  }
-  return Math.random();
-}
-function secureRandomInt(maxExclusive) {
-  return Math.floor(secureRandom() * maxExclusive);
-}
+// ---------- État local (purement d'affichage) ----------
+let latestState = null;
+let lastPhase = null;
+let selectedChip = 5;
+let wheelRotation = 0; // rotation cumulée de la roue (deg), locale à ce client
+let ballRotation = 0;  // rotation cumulée de la bille (deg), locale à ce client
+let dealerCalloutTimer = null;
+let bettingTickInterval = null;
+let hotspotDefs = [];       // définitions géométriques des mises à cheval / carré
+let lastRenderedBetIds = new Set(); // pour nettoyer les cases qui n'ont plus de mise
+let lastHistorySignature = '';
+let lastBankrollShown = null;
 
 // ---------- Numéro : couleur / parité / manque-passe ----------
 function numberColor(n) {
@@ -96,14 +108,13 @@ function numberColor(n) {
   return RED_NUMBERS.has(n) ? 'red' : 'black';
 }
 
-// ---------- Mises : définition des gains ----------
+// ---------- Mises : numéros couverts / condition de gain ----------
+// (Le calcul des gains reste côté serveur ; on garde juste de quoi savoir
+// quelles cases surligner en vert/rouge à la résolution.)
 function betNums(betId) {
-  // Pour les mises composites (split-a-b, corner-a-b-c-d, street-a-b-c),
-  // les numéros couverts sont encodés dans l'id, triés par ordre croissant.
   const dash = betId.indexOf('-');
   return betId.slice(dash + 1).split('-').map(Number);
 }
-
 function betWins(betId, n) {
   if (betId.startsWith('straight-')) return betNums(betId)[0] === n;
   if (betId.startsWith('split-') || betId.startsWith('corner-') || betId.startsWith('street-')) {
@@ -124,14 +135,6 @@ function betWins(betId, n) {
     case 'col-3': return n !== 0 && n % 3 === 0;
     default: return false;
   }
-}
-function betMultiplier(betId) {
-  if (betId.startsWith('straight-')) return 36; // 35:1 + mise rendue
-  if (betId.startsWith('split-')) return 18;     // 17:1 + mise rendue
-  if (betId.startsWith('street-')) return 12;    // 11:1 + mise rendue
-  if (betId.startsWith('corner-')) return 9;     //  8:1 + mise rendue
-  if (['dozen-1', 'dozen-2', 'dozen-3', 'col-1', 'col-2', 'col-3'].includes(betId)) return 3; // 2:1 + mise
-  return 2; // chances simples 1:1 + mise
 }
 
 // ---------- Construction des définitions de mises à cheval / carré / transversale ----------
@@ -226,7 +229,7 @@ function buildBoard() {
     el.className = `hotspot ${def.kind === 'corner' ? 'hotspot-corner' : 'hotspot-split'}`;
     el.dataset.bet = def.id;
     el.title = `${def.kind === 'corner' ? 'Carré' : 'Cheval'} ${nums.join('-')} (${def.kind === 'corner' ? '8:1' : '17:1'})`;
-    el.innerHTML = '<span class="bet-badge"></span>';
+    el.innerHTML = '<span class="bet-tokens"></span><span class="bet-badge"></span>';
     el.addEventListener('click', () => placeBet(def.id));
     def.el = el;
     hotspotLayer.appendChild(el);
@@ -244,7 +247,7 @@ function buildBoard() {
     el.className = 'street-cell';
     el.dataset.bet = id;
     el.title = `Transversale ${bot}-${mid}-${top} (11:1)`;
-    el.innerHTML = '<span class="bet-badge"></span>';
+    el.innerHTML = '<span class="bet-tokens"></span><span class="bet-badge"></span>';
     el.addEventListener('click', () => placeBet(id));
     streetRow.appendChild(el);
   }
@@ -287,7 +290,7 @@ function makeCell(betId, label, extraClasses = []) {
   const cell = document.createElement('div');
   cell.className = ['cell', ...extraClasses].join(' ');
   cell.dataset.bet = betId;
-  cell.innerHTML = `<span class="cell-label">${label}</span><span class="bet-badge"></span>`;
+  cell.innerHTML = `<span class="cell-label">${label}</span><span class="bet-tokens"></span><span class="bet-badge"></span>`;
   cell.addEventListener('click', () => placeBet(betId));
   return cell;
 }
@@ -375,10 +378,6 @@ function buildWheel() {
   }
   els.wheel.appendChild(frag);
 
-  // Fond conique : un secteur coloré par case, centré sous chaque numéro.
-  // Chaque case i occupe l'intervalle angulaire [i*seg, (i+1)*seg[ dans le
-  // repère local du gradient, celui-ci étant démarré à -seg/2 (voir "from")
-  // pour que la case 0 soit bien centrée sur l'angle 0 (comme le numéro).
   const seg = 360 / POCKET_COUNT;
   const segPct = 100 / POCKET_COUNT;
   const stops = [];
@@ -391,46 +390,41 @@ function buildWheel() {
     stops.push(`${c} ${start}% ${end}%`);
   }
   const colorGradient = `conic-gradient(from ${-seg / 2}deg, ${stops.join(', ')})`;
-  // Fines séparations dorées entre chaque case (une ligne au début de chaque secteur).
   const dividerGradient = `repeating-conic-gradient(from ${-seg / 2}deg, rgba(20,12,4,0.9) 0deg 0.5deg, transparent 0.5deg ${seg}deg)`;
   els.wheel.style.background = `${dividerGradient}, ${colorGradient}`;
 }
 
-// ---------- Rendu / UI ----------
-function totalBet() {
-  return Object.values(bets).reduce((a, b) => a + b, 0);
+// ---------- Identité visuelle des joueurs (jetons sur le tapis) ----------
+function initialsOf(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+function hashHue(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  return h % 360;
 }
 
-function updateBankrollDisplay(animate = true) {
-  els.bankroll.textContent = bankroll.toLocaleString('fr-FR');
-  if (animate) {
-    els.bankrollPill.classList.remove('bump');
-    void els.bankrollPill.offsetWidth;
-    els.bankrollPill.classList.add('bump');
-  }
-}
-
-function updateBetDisplay() {
-  const total = totalBet();
-  els.betAmount.textContent = total.toLocaleString('fr-FR');
-  els.spinBtn.disabled = total <= 0 || state !== 'betting';
-  els.undoBetBtn.disabled = betLog.length === 0;
-  els.clearBetBtn.disabled = total <= 0;
-}
-
-function updateChipAvailability() {
-  const remaining = bankroll - totalBet();
-  els.chipRack.querySelectorAll('.chip').forEach((chip) => {
-    const val = parseInt(chip.dataset.value, 10);
-    chip.disabled = val > remaining || state !== 'betting';
+// ---------- Agrégation des mises de tous les joueurs, par case ----------
+function computeAggregatedBets(state) {
+  const map = new Map(); // betId -> { total, byPlayer: [{id, name, amount, isMe}] }
+  state.players.forEach((p) => {
+    Object.entries(p.bets || {}).forEach(([betId, amount]) => {
+      if (!map.has(betId)) map.set(betId, { total: 0, byPlayer: [] });
+      const entry = map.get(betId);
+      entry.total += amount;
+      entry.byPlayer.push({ id: p.id, name: p.name, amount, isMe: p.id === myPlayerId });
+    });
   });
+  return map;
 }
 
-function refreshBadge(betId) {
-  const cell = cellFor(betId);
-  if (!cell) return;
+function updateCellBetBadge(cell, data) {
   const badge = cell.querySelector('.bet-badge');
-  const amount = bets[betId] || 0;
+  if (!badge) return;
+  const amount = data ? data.total : 0;
   if (amount > 0) {
     badge.textContent = amount >= 1000 ? `${(amount / 1000).toFixed(1)}k` : amount;
     badge.classList.add('show');
@@ -440,12 +434,106 @@ function refreshBadge(betId) {
   }
 }
 
+function updateCellPlayerTokens(cell, data) {
+  const container = cell.querySelector('.bet-tokens');
+  if (!container) return;
+  container.innerHTML = '';
+  if (!data || data.byPlayer.length === 0) return;
+  // La mise du joueur courant est toujours affichée en premier (mise en avant dorée).
+  const list = [...data.byPlayer].sort((a, b) => (b.isMe - a.isMe));
+  list.slice(0, MAX_TOKENS_SHOWN).forEach((entry) => {
+    const tok = document.createElement('span');
+    tok.className = 'bet-token' + (entry.isMe ? ' mine' : '');
+    if (!entry.isMe) tok.style.background = `hsl(${hashHue(entry.id)}, 58%, 42%)`;
+    tok.textContent = initialsOf(entry.name);
+    tok.title = `${entry.isMe ? 'Vous' : entry.name} — ${entry.amount.toLocaleString('fr-FR')} jetons`;
+    container.appendChild(tok);
+  });
+  if (list.length > MAX_TOKENS_SHOWN) {
+    const extra = list.slice(MAX_TOKENS_SHOWN);
+    const more = document.createElement('span');
+    more.className = 'bet-token overflow';
+    more.textContent = `+${extra.length}`;
+    more.title = extra.map((e) => `${e.name} — ${e.amount.toLocaleString('fr-FR')} jetons`).join(' · ');
+    container.appendChild(more);
+  }
+}
+
+function renderBoardBets(state) {
+  const agg = computeAggregatedBets(state);
+  const allIds = new Set([...agg.keys(), ...lastRenderedBetIds]);
+  allIds.forEach((betId) => {
+    const cell = cellFor(betId);
+    if (!cell) return;
+    const data = agg.get(betId) || null;
+    updateCellBetBadge(cell, data);
+    updateCellPlayerTokens(cell, data);
+  });
+  lastRenderedBetIds = new Set(agg.keys());
+  return agg;
+}
+
+// ---------- Rendu / UI ----------
+function myPlayer(state) {
+  return state.players.find((p) => p.id === myPlayerId) || null;
+}
+
+function updateBankrollDisplay(bankroll) {
+  if (bankroll !== lastBankrollShown) {
+    lastBankrollShown = bankroll;
+    els.bankrollPill.classList.remove('bump');
+    void els.bankrollPill.offsetWidth;
+    els.bankrollPill.classList.add('bump');
+  }
+  els.bankroll.textContent = bankroll.toLocaleString('fr-FR');
+}
+
+function updateBetDisplay(state) {
+  const me = myPlayer(state);
+  const total = me ? me.totalBet : 0;
+  els.betAmount.textContent = total.toLocaleString('fr-FR');
+}
+
+function updateChipAvailability(state) {
+  const me = myPlayer(state);
+  const bankroll = me ? me.bankroll : loadCachedBankroll();
+  const total = me ? me.totalBet : 0;
+  const remaining = bankroll - total;
+  els.chipRack.querySelectorAll('.chip').forEach((chip) => {
+    const val = parseInt(chip.dataset.value, 10);
+    chip.disabled = val > remaining || state.phase !== 'betting';
+  });
+}
+
+function renderReadyButton(state) {
+  const me = myPlayer(state);
+  const total = me ? me.totalBet : 0;
+  const ready = me ? me.ready : false;
+  els.readyBtn.disabled = total <= 0 || ready;
+  els.readyBtn.textContent = ready ? 'En attente des autres…' : 'Je suis prêt';
+  els.undoBetBtn.disabled = total <= 0;
+  els.clearBetBtn.disabled = total <= 0;
+}
+
 function setStatus(message, kind = '') {
+  if (els.statusMessage.textContent === message && els.statusMessage.className.includes(kind)) return;
   els.statusMessage.textContent = message;
   els.statusMessage.className = 'status-message';
   if (kind) els.statusMessage.classList.add(kind);
   void els.statusMessage.offsetWidth;
   els.statusMessage.classList.add('pop');
+}
+
+function tickBettingTimer() {
+  if (!latestState || latestState.phase !== 'betting') {
+    els.bettingTimer.hidden = true;
+    return;
+  }
+  const remainingMs = latestState.bettingEndsAt - Date.now();
+  const seconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  els.bettingTimer.hidden = false;
+  els.bettingTimer.textContent = `Lancer dans ${seconds}s`;
+  els.bettingTimer.classList.toggle('urgent', seconds <= 5);
 }
 
 function showToast(msg) {
@@ -458,93 +546,61 @@ function showToast(msg) {
 function sayDealer(text, duration = 2600) {
   clearTimeout(dealerCalloutTimer);
   els.dealerCallout.innerHTML = `<span>${text}</span>`;
-  dealerCalloutTimer = setTimeout(() => {
-    els.dealerCallout.innerHTML = '';
-  }, duration);
+  dealerCalloutTimer = setTimeout(() => { els.dealerCallout.innerHTML = ''; }, duration);
 }
 
 // ---------- Historique ----------
-function pushHistory(n) {
-  history.unshift(n);
-  if (history.length > HISTORY_MAX) history.length = HISTORY_MAX;
-  renderHistory();
-}
-function renderHistory() {
-  els.historyStrip.innerHTML = history
-    .map((n) => {
-      const c = numberColor(n);
-      const cls = c === 'red' ? 'red-n' : c === 'black' ? 'black-n' : 'green-n';
-      return `<span class="history-chip ${cls}">${n}</span>`;
-    })
-    .join('');
+function renderHistoryIfChanged(list) {
+  const sig = list.join(',');
+  if (sig === lastHistorySignature) return;
+  lastHistorySignature = sig;
+  els.historyStrip.innerHTML = list.map((n) => {
+    const c = numberColor(n);
+    const cls = c === 'red' ? 'red-n' : c === 'black' ? 'black-n' : 'green-n';
+    return `<span class="history-chip ${cls}">${n}</span>`;
+  }).join('');
 }
 
-// ---------- Mises ----------
-function placeBet(betId) {
-  if (state !== 'betting') return;
-  const remaining = bankroll - totalBet();
-  if (selectedChip > remaining) {
-    showToast('Fonds insuffisants pour ce jeton');
-    return;
-  }
-  bets[betId] = (bets[betId] || 0) + selectedChip;
-  betLog.push({ betId, value: selectedChip });
-  refreshBadge(betId);
-  updateBetDisplay();
-  updateChipAvailability();
-}
-
-function undoBet() {
-  if (state !== 'betting' || betLog.length === 0) return;
-  const last = betLog.pop();
-  bets[last.betId] -= last.value;
-  if (bets[last.betId] <= 0) delete bets[last.betId];
-  refreshBadge(last.betId);
-  updateBetDisplay();
-  updateChipAvailability();
-}
-
-function clearBets() {
-  if (state !== 'betting') return;
-  const ids = Object.keys(bets);
-  bets = {};
-  betLog = [];
-  ids.forEach(refreshBadge);
-  updateBetDisplay();
-  updateChipAvailability();
-}
-
+// ---------- Surlignage des résultats sur le tapis ----------
 function clearBetHighlights() {
   els.board.querySelectorAll('[data-bet]').forEach((c) => {
     c.classList.remove('bet-win', 'bet-lose', 'winning-number');
   });
 }
 
-// ---------- Annonce du croupier ----------
-function announceResult(n) {
-  const color = numberColor(n);
-  if (n === 0) return '0, zéro.';
-  const colorFr = color === 'red' ? 'rouge' : 'noir';
-  const parity = n % 2 === 0 ? 'pair' : 'impair';
-  const range = n <= 18 ? 'manque' : 'passe';
-  return `${n}, ${colorFr}, ${parity}, ${range}.`;
+function onResolved(state, agg) {
+  const n = state.winningNumber;
+  agg.forEach((data, betId) => {
+    const cell = cellFor(betId);
+    if (!cell) return;
+    cell.classList.add(betWins(betId, n) ? 'bet-win' : 'bet-lose');
+  });
+  const numberCell = cellFor(`straight-${n}`);
+  if (numberCell) numberCell.classList.add('winning-number');
+
+  const me = myPlayer(state);
+  if (me && me.lastResult && me.lastResult.totalBet > 0) {
+    const { winnings } = me.lastResult;
+    if (winnings > 0) showToast(`${n} — Vous gagnez ${winnings.toLocaleString('fr-FR')} jetons !`);
+    else showToast(`${n} — Vous perdez ce tour`);
+  }
 }
 
-// ---------- Rotation de la roue et de la bille ----------
+// ---------- Rotation de la roue et de la bille (purement visuel, local) ----------
 function spinWheelTo(number) {
   const idx = WHEEL_ORDER.indexOf(number);
   const pocketAngle = idx * POCKET_ANGLE;
 
-  const wheelTurns = 4 + secureRandomInt(3); // 4 à 6 tours
-  const wheelExtra = secureRandom() * 360;
+  // Petites variations visuelles générées localement (pas besoin de
+  // synchroniser l'angle exact entre clients, seul le numéro final compte).
+  const wheelTurns = 4 + Math.floor(Math.random() * 3); // 4 à 6 tours
+  const wheelExtra = Math.random() * 360;
   const newWheelRotation = wheelRotation + 360 * wheelTurns + wheelExtra;
 
-  // La bille doit finir exactement au-dessus de la case gagnante,
-  // qui se trouve désormais à l'angle absolu (rotation roue + angle case).
   const targetAbsolute = (((newWheelRotation % 360) + pocketAngle) % 360 + 360) % 360;
   const currentBallMod = ((ballRotation % 360) + 360) % 360;
   const deltaToTarget = ((targetAbsolute - currentBallMod) % 360 + 360) % 360;
-  const ballTurns = 6 + secureRandomInt(3); // 6 à 8 tours, sens opposé visuellement plus rapide
+  const ballTurns = 6 + Math.floor(Math.random() * 3); // 6 à 8 tours
   const newBallRotation = ballRotation + 360 * ballTurns + deltaToTarget;
 
   wheelRotation = newWheelRotation;
@@ -554,95 +610,129 @@ function spinWheelTo(number) {
   els.ballPivot.style.transform = `rotate(${ballRotation}deg)`;
 }
 
-// ---------- Cycle de jeu ----------
-function spin() {
-  if (state !== 'betting') return;
-  const total = totalBet();
-  if (total <= 0 || total > bankroll) return;
-
-  state = 'spinning';
-  bankroll -= total;
-  updateBankrollDisplay();
-  saveBankroll();
-  updateBetDisplay();
-  updateChipAvailability();
-  els.board.classList.add('locked');
-
-  setStatus('La bille tourne…');
-  sayDealer('Les jeux sont faits, rien ne va plus.', 3200);
-
-  const winningNumber = secureRandomInt(POCKET_COUNT);
-  spinWheelTo(winningNumber);
-
-  const SPIN_DURATION = 4600;
-  setTimeout(() => resolveSpin(winningNumber), SPIN_DURATION);
+// ---------- Mises : envoi au serveur ----------
+function placeBet(betId) {
+  if (!latestState || latestState.phase !== 'betting') return;
+  const me = myPlayer(latestState);
+  const bankroll = me ? me.bankroll : loadCachedBankroll();
+  const total = me ? me.totalBet : 0;
+  const remaining = bankroll - total;
+  if (selectedChip > remaining) {
+    showToast('Fonds insuffisants pour ce jeton');
+    return;
+  }
+  send({ type: 'bet', betId, amount: selectedChip });
 }
 
-function resolveSpin(n) {
-  state = 'result';
+// ---------- Rendu global à partir d'un "state" serveur ----------
+function render(state) {
+  const previousPhase = lastPhase;
+  latestState = state;
 
-  let winnings = 0;
-  for (const [betId, amount] of Object.entries(bets)) {
-    const cell = cellFor(betId);
-    if (betWins(betId, n)) {
-      winnings += amount * betMultiplier(betId);
-      if (cell) cell.classList.add('bet-win');
-    } else if (cell) {
-      cell.classList.add('bet-lose');
+  els.playersCount.textContent = state.playersCount;
+
+  const me = myPlayer(state);
+  if (me) els.myNameLabel.textContent = me.name;
+  const bankroll = me ? me.bankroll : loadCachedBankroll();
+  updateBankrollDisplay(bankroll);
+  cacheBankroll(bankroll);
+
+  renderHistoryIfChanged(state.history);
+  const agg = renderBoardBets(state);
+  updateBetDisplay(state);
+  updateChipAvailability(state);
+  renderReadyButton(state);
+
+  setStatus(state.statusMessage, state.statusKind);
+  tickBettingTimer();
+
+  const betting = state.phase === 'betting';
+  els.betZone.hidden = !betting;
+  els.board.classList.toggle('locked', !betting);
+
+  const showGameActions = state.phase === 'spinning' || state.phase === 'resolved';
+  els.gameActions.hidden = !showGameActions;
+  if (state.phase === 'spinning') els.waitingNote.textContent = 'La bille tourne…';
+  else if (state.phase === 'resolved') els.waitingNote.textContent = 'Nouvelle manche dans quelques instants…';
+
+  // Transitions de phase : déclenche l'animation de la roue, nettoie ou
+  // applique les surlignages, une seule fois par manche.
+  if (state.phase === 'spinning' && previousPhase !== 'spinning') {
+    spinWheelTo(state.winningNumber);
+  }
+  if (state.phase === 'betting' && previousPhase !== 'betting') {
+    clearBetHighlights();
+  }
+  if (state.phase === 'resolved' && previousPhase !== 'resolved') {
+    onResolved(state, agg);
+  }
+  lastPhase = state.phase;
+}
+
+// ---------- Connexion WebSocket ----------
+let ws = null;
+let reconnectDelay = 1000;
+const RECONNECT_MAX = 10000;
+
+function wsUrl() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  // Chemin de base = dossier de la page actuelle (enlève le nom de fichier
+  // éventuel, ex. "index.html"). Permet au jeu de fonctionner aussi bien
+  // servi à la racine du domaine que sous un sous-chemin comme /roulette/
+  // derrière un reverse proxy (nginx) — le websocket reste toujours relatif.
+  const basePath = location.pathname.replace(/[^/]*$/, '');
+  return `${proto}//${location.host}${basePath}ws`;
+}
+
+function send(payload) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(payload));
+  }
+}
+
+function connect() {
+  setStatus('Connexion à la table…');
+  els.connDot.classList.remove('online');
+
+  ws = new WebSocket(wsUrl());
+
+  ws.addEventListener('open', () => {
+    reconnectDelay = 1000;
+    els.connDot.classList.add('online');
+    send({ type: 'hello', playerId: myPlayerId });
+  });
+
+  ws.addEventListener('message', (evt) => {
+    let msg;
+    try { msg = JSON.parse(evt.data); } catch { return; }
+    if (msg.type === 'welcome') {
+      cacheBankroll(msg.bankroll);
+      els.myNameLabel.textContent = msg.name;
+    } else if (msg.type === 'state') {
+      render(msg);
+    } else if (msg.type === 'dealerSay') {
+      sayDealer(msg.text, msg.duration);
+    } else if (msg.type === 'toast') {
+      showToast(msg.text);
     }
-  }
+  });
 
-  bankroll += winnings;
-  updateBankrollDisplay();
-  saveBankroll();
-
-  const numberCell = cellFor(`straight-${n}`);
-  if (numberCell) numberCell.classList.add('winning-number');
-
-  pushHistory(n);
-
-  const color = numberColor(n);
-  const colorLabel = color === 'red' ? 'Rouge' : color === 'black' ? 'Noir' : 'Zéro';
-  let message;
-  if (winnings > 0) {
-    message = `${n} · ${colorLabel} — Vous gagnez ${winnings.toLocaleString('fr-FR')} jetons !`;
-  } else {
-    message = `${n} · ${colorLabel} — Vous perdez ce tour`;
-  }
-  setStatus(message, winnings > 0 ? 'win' : 'lose');
-  sayDealer(announceResult(n), 3200);
-
-  els.betZone.style.display = 'none';
-  els.gameActions.hidden = false;
-
-  if (bankroll <= 0) {
-    setTimeout(() => {
-      showToast('Plus de jetons — remise à zéro du solde');
-      bankroll = START_BANKROLL;
-      updateBankrollDisplay();
-      saveBankroll();
-    }, 1400);
-  }
+  const onDown = () => {
+    latestState = null; // évite d'afficher un minuteur/état périmé pendant la coupure
+    lastPhase = null;    // resynchronisation propre des transitions à la reconnexion
+    els.connDot.classList.remove('online');
+    setStatus('Connexion perdue — reconnexion…');
+    els.betZone.hidden = true;
+    els.gameActions.hidden = true;
+    els.bettingTimer.hidden = true;
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 1.6, RECONNECT_MAX);
+  };
+  ws.addEventListener('close', onDown);
+  ws.addEventListener('error', () => { try { ws.close(); } catch { /* ignore */ } });
 }
 
-function nextRound() {
-  state = 'betting';
-  const ids = Object.keys(bets);
-  bets = {};
-  betLog = [];
-  ids.forEach(refreshBadge);
-  clearBetHighlights();
-  els.board.classList.remove('locked');
-  updateBetDisplay();
-  updateChipAvailability();
-
-  els.gameActions.hidden = true;
-  els.betZone.style.display = 'flex';
-  setStatus('Placez vos mises');
-  sayDealer('Faites vos jeux, mesdames et messieurs.');
-}
-
-// ---------- Event bindings ----------
+// ---------- Actions du joueur ----------
 els.chipRack.addEventListener('click', (e) => {
   const chip = e.target.closest('.chip');
   if (!chip || chip.disabled) return;
@@ -650,10 +740,9 @@ els.chipRack.addEventListener('click', (e) => {
   els.chipRack.querySelectorAll('.chip').forEach((c) => c.classList.remove('active'));
   chip.classList.add('active');
 });
-els.undoBetBtn.addEventListener('click', undoBet);
-els.clearBetBtn.addEventListener('click', clearBets);
-els.spinBtn.addEventListener('click', spin);
-els.nextRoundBtn.addEventListener('click', nextRound);
+els.undoBetBtn.addEventListener('click', () => send({ type: 'undoBet' }));
+els.clearBetBtn.addEventListener('click', () => send({ type: 'clearBets' }));
+els.readyBtn.addEventListener('click', () => { if (!els.readyBtn.disabled) send({ type: 'ready' }); });
 
 els.rulesBtn.addEventListener('click', () => els.rulesModal.classList.add('open'));
 els.closeRulesBtn.addEventListener('click', () => els.rulesModal.classList.remove('open'));
@@ -661,8 +750,34 @@ els.rulesModal.addEventListener('click', (e) => {
   if (e.target === els.rulesModal) els.rulesModal.classList.remove('open');
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') els.rulesModal.classList.remove('open');
+  if (e.key === 'Escape') {
+    els.rulesModal.classList.remove('open');
+    els.profileModal.classList.remove('open');
+  }
 });
+
+// ---------- Pseudo personnalisable ----------
+(function initProfileModal() {
+  function openModal() {
+    const me = latestState ? myPlayer(latestState) : null;
+    els.nameInput.value = me ? me.name : els.myNameLabel.textContent;
+    els.profileModal.classList.add('open');
+    els.nameInput.focus();
+    els.nameInput.select();
+  }
+  function closeModal() { els.profileModal.classList.remove('open'); }
+  function saveName() {
+    const raw = els.nameInput.value.trim();
+    if (raw) send({ type: 'setName', name: raw });
+    closeModal();
+  }
+
+  els.profileBtn.addEventListener('click', openModal);
+  els.closeProfileBtn.addEventListener('click', closeModal);
+  els.profileModal.addEventListener('click', (e) => { if (e.target === els.profileModal) closeModal(); });
+  els.saveNameBtn.addEventListener('click', saveName);
+  els.nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveName(); });
+})();
 
 // ---------- Menu inter-jeux ----------
 // Petit panneau dupliqué à l'identique sur les 4 pages du site (lobby,
@@ -699,15 +814,15 @@ document.addEventListener('keydown', (e) => {
 function init() {
   buildBoard();
   buildWheel();
-  updateBankrollDisplay(false);
-  updateBetDisplay();
-  updateChipAvailability();
+  els.bankroll.textContent = loadCachedBankroll().toLocaleString('fr-FR');
+  els.betZone.hidden = true;
   els.gameActions.hidden = true;
-  sayDealer('Bienvenue à la table ! Faites vos jeux.');
   // Repositionne les points de mise une fois les polices/mise en page stabilisées.
   requestAnimationFrame(() => requestAnimationFrame(positionHotspots));
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(positionHotspots).catch(() => {});
   }
+  bettingTickInterval = setInterval(tickBettingTimer, 500);
+  connect();
 }
 init();

@@ -191,6 +191,41 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
 
 .topbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
+/* ===== Pills "joueurs à la table" / "mon pseudo" ===== */
+.players-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--cream);
+  backdrop-filter: blur(6px);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+button.players-pill { font-family: inherit; cursor: pointer; appearance: none; -webkit-appearance: none; }
+button.players-pill:hover { background: rgba(212, 175, 90, 0.14); }
+
+.players-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--red-bright);
+  box-shadow: 0 0 6px var(--red-bright);
+  flex-shrink: 0;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+.players-dot.online { background: var(--green-win); box-shadow: 0 0 6px var(--green-win); }
+.players-label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; }
+
+.profile-pill { max-width: 150px; }
+.profile-pill span:not(.profile-icon) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-icon { flex-shrink: 0; font-size: 0.85rem; }
+
 .bankroll-pill {
   display: flex;
   align-items: center;
@@ -430,6 +465,17 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
 .status-message.push { color: var(--amber-push); }
 .status-message.pop { animation: popIn 0.4s cubic-bezier(.3, 1.6, .4, 1) both; }
 
+.betting-timer {
+  margin-top: 2px;
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--gold-bright);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+.betting-timer.urgent { color: var(--red-bright); }
+
 /* ===== Le tapis de mises ===== */
 .table-section {
   width: 100%;
@@ -595,6 +641,40 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
 }
 .bet-badge.show { display: flex; }
 
+/* ---- jetons des joueurs (initiales) empilés sur une case mise ---- */
+.bet-tokens {
+  position: absolute;
+  top: -7px;
+  left: -7px;
+  display: flex;
+  z-index: 7;
+  pointer-events: none;
+}
+.bet-token {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 5.5px;
+  font-weight: 800;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  margin-left: -6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.bet-token:first-child { margin-left: 0; }
+.bet-token.mine {
+  background: radial-gradient(circle at 35% 30%, var(--gold-bright), var(--gold) 60%, #8a6a2a 100%);
+  color: #2a1c04;
+  border-color: rgba(255, 255, 255, 0.85);
+  z-index: 2;
+}
+.bet-token.overflow { background: rgba(10, 10, 10, 0.85); font-size: 5px; }
+
 /* ---- résultats ---- */
 .cell.bet-win, .hotspot.bet-win { outline: 2px solid var(--green-win); outline-offset: -2px; }
 .cell.bet-lose, .hotspot.bet-lose { outline: 2px solid rgba(231, 76, 60, 0.6); outline-offset: -2px; }
@@ -712,6 +792,14 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
 
 .bet-actions, .game-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 
+.waiting-note {
+  font-size: 0.88rem;
+  opacity: 0.7;
+  font-style: italic;
+  padding: 6px 0;
+  text-align: center;
+}
+
 .btn {
   border: none;
   border-radius: 12px;
@@ -775,6 +863,24 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
 .modal-body li { font-size: 0.9rem; line-height: 1.5; color: rgba(244, 234, 217, 0.9); }
 .modal-note { margin-top: 16px; font-size: 0.8rem; opacity: 0.6; font-style: italic; }
 
+/* ===== Modale "Mon pseudo" ===== */
+.profile-modal-label { display: block; font-size: 0.78rem; opacity: 0.7; margin-bottom: 8px; }
+.profile-input-row { display: flex; gap: 8px; }
+.profile-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--cream);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.profile-input:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
+.profile-input::placeholder { color: rgba(244, 234, 217, 0.35); }
+
 /* ===== Toast ===== */
 .toast {
   position: fixed;
@@ -819,16 +925,26 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
   .hotspot { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; }
   .hotspot.hotspot-corner { width: 12px; height: 12px; margin: -6px 0 0 -6px; }
   .street-cell { height: 11px; }
+  .bet-tokens { top: -5px; left: -5px; }
+  .bet-token { width: 11px; height: 11px; font-size: 4.5px; margin-left: -5px; }
 
   .history-strip { min-height: 26px; }
   .history-chip { width: 22px; height: 22px; font-size: 0.58rem; }
   .brand-sub { display: none; }
   .brand { font-size: 1.05rem; }
 
-  .topbar { padding: 10px 10px; gap: 6px; flex-wrap: nowrap; }
-  .icon-btn { width: 32px; height: 32px; font-size: 0.95rem; flex-shrink: 0; }
+  .topbar { padding: 10px 8px; gap: 4px; flex-wrap: nowrap; }
+  .topbar-right { gap: 5px; }
+  .icon-btn { width: 30px; height: 30px; font-size: 0.9rem; flex-shrink: 0; }
   .brand-icon { font-size: 1.15rem; }
-  .bankroll-pill { padding: 5px 10px; gap: 5px; font-size: 0.8rem; }
+  .bankroll-pill { padding: 5px 8px; gap: 4px; font-size: 0.76rem; }
+  .players-pill { padding: 5px 7px; gap: 3px; font-size: 0.7rem; }
+  .players-label { display: none; }
+  /* Pseudo réduit à la seule icône crayon sur mobile : la place manque pour
+     afficher le nom en plus de la marque et des autres pastilles. Le nom
+     reste consultable/modifiable via la modale ouverte au clic. */
+  .profile-pill { max-width: 34px; padding: 5px 8px; }
+  .profile-pill span:not(.profile-icon) { display: none; }
   .game-menu-panel { min-width: 190px; right: -6px; }
 
   .chip { width: 48px; height: 48px; font-size: 0.8rem; }
