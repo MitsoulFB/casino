@@ -132,6 +132,20 @@ button { font-family: inherit; cursor: pointer; }
 .players-dot.online { background: var(--green-win); box-shadow: 0 0 6px var(--green-win); }
 .players-label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; }
 
+/* ===== Pill "table privée" (bouton, reprend le style de .players-pill) ===== */
+.table-pill {
+  font-family: inherit;
+  color: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  max-width: 140px;
+}
+.table-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.table-pill:hover { background: rgba(212,175,90,0.14); }
+.table-pill.private { border-color: rgba(212,175,90,0.6); }
+.table-pill-icon { flex-shrink: 0; }
+
 .bankroll-pill {
   display: flex;
   align-items: center;
@@ -795,6 +809,53 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
   font-style: italic;
 }
 
+/* ===== Modale table privée ===== */
+.table-modal-current {
+  margin: 0 0 14px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: rgba(244,234,217,0.85);
+}
+.table-code-display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(0,0,0,0.28);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+.table-code-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6; }
+.table-code-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: 0.12em;
+  color: var(--gold-bright);
+}
+.table-modal-btn { width: 100%; display: block; }
+.table-modal-sep { height: 1px; background: rgba(255,255,255,0.08); margin: 16px 0; }
+.table-modal-label { display: block; font-size: 0.78rem; opacity: 0.7; margin-bottom: 8px; }
+.table-join-row { display: flex; gap: 8px; }
+.table-join-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0,0,0,0.28);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--cream);
+  font-family: var(--font-body);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.95rem;
+}
+.table-join-input:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
+.table-join-input::placeholder { color: rgba(244,234,217,0.35); text-transform: none; letter-spacing: normal; }
+#leaveTableBtn { margin-top: 14px; }
+
 /* ===== Toast ===== */
 .toast {
   position: fixed;
@@ -828,6 +889,8 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
   .bankroll-pill .currency { display: none; }
   .players-pill { font-size: 0.75rem; padding: 5px 8px; }
   .players-label { display: none; }
+  .table-pill { max-width: 34px; padding: 5px 8px; }
+  .table-pill span:not(.table-pill-icon) { display: none; }
   .hand-pod .card-slot { width: 44px; height: 62px; margin-left: -16px; }
   .card-slot { width: 60px; height: 84px; margin-left: -20px; }
   .chip { width: 50px; height: 50px; font-size: 0.82rem; }

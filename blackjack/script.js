@@ -25,6 +25,25 @@ function loadOrCreatePlayerId() {
 }
 const myPlayerId = loadOrCreatePlayerId();
 
+// ---------- Table courante (publique par défaut, ou privée via ?table=CODE) ----------
+// Le code de table est lu une fois au chargement de la page depuis l'URL, et
+// transmis au serveur dans le message "hello" (pas en query string du
+// websocket, pour rester robuste face à un reverse proxy). Rejoindre/créer
+// une autre table se fait en changeant l'URL puis en rechargeant la page.
+function readTableCodeFromUrl() {
+  const params = new URLSearchParams(location.search);
+  const raw = params.get('table');
+  if (!raw) return null;
+  const cleaned = raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+  return cleaned || null;
+}
+const myTableCode = readTableCodeFromUrl(); // null = table publique
+
+function tableUrlFor(code) {
+  const basePath = location.pathname.replace(/[^/]*$/, '');
+  return `${location.origin}${basePath}?table=${code}`;
+}
+
 function cacheBankroll(n) {
   try { localStorage.setItem(BANKROLL_CACHE_KEY, String(n)); } catch { /* ignore */ }
 }
@@ -64,6 +83,17 @@ const els = {
   shoeCount: document.getElementById('shoeCount'),
   shoeDecks: document.getElementById('shoeDecks'),
   dealerCallout: document.getElementById('dealerCallout'),
+  tablePill: document.getElementById('tablePill'),
+  tableLabel: document.getElementById('tableLabel'),
+  closeTableBtn: document.getElementById('closeTableBtn'),
+  tableModal: document.getElementById('tableModal'),
+  currentTableCode: document.getElementById('currentTableCode'),
+  currentTableKind: document.getElementById('currentTableKind'),
+  copyTableLinkBtn: document.getElementById('copyTableLinkBtn'),
+  createTableBtn: document.getElementById('createTableBtn'),
+  joinTableInput: document.getElementById('joinTableInput'),
+  joinTableBtn: document.getElementById('joinTableBtn'),
+  leaveTableBtn: document.getElementById('leaveTableBtn'),
 };
 
 // ---------- État local ----------
@@ -415,7 +445,7 @@ function connect() {
   ws.addEventListener('open', () => {
     reconnectDelay = 1000;
     els.connDot.classList.add('online');
-    send({ type: 'hello', playerId: myPlayerId });
+    send({ type: 'hello', playerId: myPlayerId, tableCode: myTableCode });
   });
 
   ws.addEventListener('message', (evt) => {
@@ -423,12 +453,16 @@ function connect() {
     try { msg = JSON.parse(evt.data); } catch { return; }
     if (msg.type === 'welcome') {
       cacheBankroll(msg.bankroll);
+      renderTableInfo(msg.tableCode, msg.isPublicTable);
     } else if (msg.type === 'state') {
       render(msg);
     } else if (msg.type === 'dealerSay') {
       sayDealer(msg.text, msg.duration);
     } else if (msg.type === 'toast') {
       showToast(msg.text);
+    } else if (msg.type === 'tableCreated') {
+      // Le serveur a généré un code de table privée inédit : on y va.
+      location.href = tableUrlFor(msg.tableCode);
     }
   });
 
@@ -475,6 +509,71 @@ document.addEventListener('keydown', (e) => {
     if (e.key.toLowerCase() === 'p' && !els.splitBtn.disabled) send({ type: 'split' });
   }
 });
+
+// ---------- Table privée : affichage + création/partage/rejoindre ----------
+let currentTableCode = 'PUBLIC';
+let currentTableIsPublic = true;
+
+function renderTableInfo(tableCode, isPublicTable) {
+  currentTableCode = tableCode || 'PUBLIC';
+  currentTableIsPublic = !!isPublicTable;
+
+  els.tableLabel.textContent = currentTableIsPublic ? 'Table publique' : currentTableCode;
+  els.tablePill.classList.toggle('private', !currentTableIsPublic);
+  els.tablePill.title = currentTableIsPublic
+    ? 'Table publique — cliquez pour créer ou rejoindre une table privée'
+    : `Table privée ${currentTableCode} — cliquez pour partager le lien`;
+
+  els.currentTableCode.textContent = currentTableIsPublic ? '—' : currentTableCode;
+  els.currentTableKind.textContent = currentTableIsPublic
+    ? 'Vous êtes sur la table publique, ouverte à tout le monde.'
+    : 'Table privée : seules les personnes ayant le code ou le lien peuvent la rejoindre.';
+  els.copyTableLinkBtn.hidden = currentTableIsPublic;
+  els.leaveTableBtn.hidden = currentTableIsPublic;
+}
+
+(function initTableModal() {
+  if (!els.tablePill || !els.tableModal) return;
+
+  els.tablePill.addEventListener('click', () => els.tableModal.classList.add('open'));
+  els.closeTableBtn.addEventListener('click', () => els.tableModal.classList.remove('open'));
+  els.tableModal.addEventListener('click', (e) => {
+    if (e.target === els.tableModal) els.tableModal.classList.remove('open');
+  });
+
+  els.createTableBtn.addEventListener('click', () => {
+    els.createTableBtn.disabled = true;
+    send({ type: 'createTable' });
+    // Filet de sécurité si la réponse tarde/n'arrive pas (socket coupé) :
+    // on redonne la main plutôt que de laisser le bouton bloqué.
+    setTimeout(() => { els.createTableBtn.disabled = false; }, 4000);
+  });
+
+  els.copyTableLinkBtn.addEventListener('click', async () => {
+    const url = tableUrlFor(currentTableCode);
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast('Lien de la table copié !');
+    } catch {
+      showToast(url); // affichage de secours si le presse-papiers est indisponible
+    }
+  });
+
+  function joinFromInput() {
+    const raw = els.joinTableInput.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!raw) return;
+    location.href = tableUrlFor(raw);
+  }
+  els.joinTableBtn.addEventListener('click', joinFromInput);
+  els.joinTableInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') joinFromInput();
+  });
+
+  els.leaveTableBtn.addEventListener('click', () => {
+    const basePath = location.pathname.replace(/[^/]*$/, '');
+    location.href = `${location.origin}${basePath}`;
+  });
+})();
 
 // ---------- Menu inter-jeux ----------
 // Petit panneau dupliqué à l'identique sur les 4 pages du site (lobby,

@@ -21,6 +21,10 @@
       <span class="brand-name">Maison<span class="accent">21</span></span>
     </div>
     <div class="topbar-right">
+      <button class="players-pill table-pill" id="tablePill" title="Table actuelle">
+        <span class="table-pill-icon">🔑</span>
+        <span id="tableLabel">Table publique</span>
+      </button>
       <div class="players-pill" id="playersPill" title="Joueurs à la table">
         <span class="players-dot" id="connDot"></span>
         <span id="playersCount">0</span>
@@ -126,6 +130,39 @@
         <li>Le nombre de cartes restantes s'affiche sur le sabot, pour s'entraîner au <strong>comptage de cartes</strong>.</li>
       </ul>
       <p class="modal-note">Jeu 100% gratuit, à but purement ludique — aucune monnaie réelle n'est utilisée.</p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="tableModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Table privée</h2>
+      <button class="icon-btn" id="closeTableBtn" aria-label="Fermer">×</button>
+    </div>
+    <div class="modal-body">
+      <p class="table-modal-current" id="currentTableKind">Vous êtes sur la table publique, ouverte à tout le monde.</p>
+      <div class="table-code-display" id="currentTableCodeWrap">
+        <span class="table-code-label">Code de la table</span>
+        <span class="table-code-value" id="currentTableCode">—</span>
+      </div>
+      <button class="btn btn-ghost table-modal-btn" id="copyTableLinkBtn" hidden>🔗 Copier le lien de la table</button>
+
+      <div class="table-modal-sep"></div>
+
+      <button class="btn btn-primary table-modal-btn" id="createTableBtn">✨ Créer une table privée</button>
+
+      <div class="table-modal-sep"></div>
+
+      <label class="table-modal-label" for="joinTableInput">Rejoindre une table avec un code</label>
+      <div class="table-join-row">
+        <input class="table-join-input" id="joinTableInput" type="text" maxlength="12" placeholder="Ex. AB3XQK" autocomplete="off" autocapitalize="characters">
+        <button class="btn btn-ghost" id="joinTableBtn">Rejoindre</button>
+      </div>
+
+      <button class="btn btn-ghost table-modal-btn" id="leaveTableBtn" hidden>← Retour à la table publique</button>
+
+      <p class="modal-note">Une table privée est isolée : sabot, mises et minuteur indépendants. Partagez le code ou le lien à vos amis pour jouer ensemble.</p>
     </div>
   </div>
 </div>
