@@ -392,7 +392,12 @@ const RECONNECT_MAX = 10000;
 
 function wsUrl() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${location.host}/ws`;
+  // Chemin de base = dossier de la page actuelle (enlève le nom de fichier
+  // éventuel, ex. "index.html"). Permet au jeu de fonctionner aussi bien
+  // servi à la racine du domaine que sous un sous-chemin comme /blackjack/
+  // derrière un reverse proxy (nginx) — le websocket reste toujours relatif.
+  const basePath = location.pathname.replace(/[^/]*$/, '');
+  return `${proto}//${location.host}${basePath}ws`;
 }
 
 function send(payload) {

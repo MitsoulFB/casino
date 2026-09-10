@@ -760,7 +760,14 @@ app.use(express.static(__dirname, { extensions: ['html'] }));
 
 const server = http.createServer(app);
 server.on('upgrade', (req, socket, head) => {
-  if (req.url && req.url.startsWith('/ws')) {
+  // On accepte toute requête d'upgrade se terminant par "/ws", pas seulement
+  // "/ws" à la racine : selon la config du reverse proxy (nginx), un
+  // déploiement sous un sous-chemin (ex. /blackjack/) peut soit conserver
+  // ce préfixe jusqu'ici, soit le retirer avant de transmettre au backend.
+  // Le client (script.js) construit toujours son URL de façon relative à
+  // son propre chemin, donc les deux cas sont couverts.
+  const url = (req.url || '').split('?')[0];
+  if (url === '/ws' || url.endsWith('/ws')) {
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
   } else {
     socket.destroy();
