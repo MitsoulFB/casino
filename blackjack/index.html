@@ -30,6 +30,11 @@
         <span id="playersCount">0</span>
         <span class="players-label">à la table</span>
       </div>
+      <!-- Pseudo du joueur courant : cliquer ouvre la modale de renommage. -->
+      <button class="players-pill profile-pill" id="profilePill" title="Modifier votre pseudo">
+        <span class="profile-pill-icon">👤</span>
+        <span id="myNameLabel">Joueur</span>
+      </button>
       <div class="bankroll-pill">
         <span class="chip-dot"></span>
         <span id="bankroll">1000</span>
@@ -46,6 +51,7 @@
           <a class="game-menu-item" href="../poker/"><span class="gm-icon">♣️</span><span>Poker Texas Hold'em</span></a>
         </div>
       </div>
+      <button class="icon-btn" id="leaderboardBtn" title="Classement" aria-label="Classement">🏆</button>
       <button class="icon-btn" id="rulesBtn" title="Règles du jeu" aria-label="Règles du jeu">?</button>
     </div>
   </header>
@@ -163,6 +169,54 @@
       <button class="btn btn-ghost table-modal-btn" id="leaveTableBtn" hidden>← Retour à la table publique</button>
 
       <p class="modal-note">Une table privée est isolée : sabot, mises et minuteur indépendants. Partagez le code ou le lien à vos amis pour jouer ensemble.</p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="nameModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Votre pseudo</h2>
+      <button class="icon-btn" id="closeNameBtn" aria-label="Fermer">×</button>
+    </div>
+    <div class="modal-body">
+      <label class="table-modal-label" for="nameInput">Pseudo (20 caractères maximum)</label>
+      <div class="table-join-row">
+        <input class="name-input" id="nameInput" type="text" maxlength="20" placeholder="Votre pseudo" autocomplete="off">
+        <button class="btn btn-primary" id="saveNameBtn">Enregistrer</button>
+      </div>
+      <p class="name-error" id="nameError" hidden></p>
+      <p class="modal-note">Visible par tous les joueurs de vos tables, en temps réel.</p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="leaderboardModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>🏆 Classement</h2>
+      <button class="icon-btn" id="closeLeaderboardBtn" aria-label="Fermer">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="leaderboard-list" id="leaderboardList">
+        <p class="leaderboard-loading">Chargement du classement…</p>
+      </div>
+      <p class="modal-note">Record personnel : le plus haut solde de jetons jamais atteint par chaque joueur, toutes tables confondues.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Modale d'exclusion pour inactivité : PAS de bouton de fermeture (×) ni
+     de fermeture au clic sur le fond — volontaire, le joueur doit cliquer
+     explicitement sur "Reprendre place à la table" pour être réintégré. -->
+<div class="modal-backdrop" id="exclusionModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>🚫 Exclu(e) pour inactivité</h2>
+    </div>
+    <div class="modal-body">
+      <p class="exclusion-message" id="exclusionMessage">Vous avez manqué votre tour sur deux manches consécutives : vous ne pouvez plus miser ni jouer sur cette table.</p>
+      <button class="btn btn-primary table-modal-btn" id="rejoinTableBtn">Reprendre place à la table</button>
     </div>
   </div>
 </div>

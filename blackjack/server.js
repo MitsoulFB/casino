@@ -33,6 +33,12 @@ const PLAYERS_FILE = path.join(DATA_DIR, 'players.json');
 
 const START_BANKROLL = 1000;
 const MAX_HANDS_PER_PLAYER = 4;
+const MAX_NAME_LENGTH = 20;
+// Nombre de manches manquées consécutives (tour entièrement passé sans agir
+// une seule fois, alors que le joueur avait au moins une main en jeu) à
+// partir duquel un joueur est exclu de sa table pour inactivité.
+const MAX_MISSED_ROUNDS_BEFORE_EXCLUSION = 2;
+const LEADERBOARD_SIZE = 10; // taille du top affiché (tous les joueurs connus si moins nombreux)
 // Durées configurables via variables d'environnement (utile pour les tests).
 const BETTING_DURATION_MS = Number(process.env.BETTING_DURATION_MS) || 22000;   // durée max de la phase de mise
 const FAST_START_DELAY_MS = Number(process.env.FAST_START_DELAY_MS) || 1500;    // délai de sécurité une fois tout le monde prêt
@@ -73,6 +79,31 @@ function loadPlayersDB() {
   } catch {
     playersDB = {};
   }
+  // Migration douce : les entrées enregistrées avant l'ajout du classement
+  // n'ont pas de champ "record" (plus haut solde jamais atteint). On
+  // l'initialise au solde actuel — la meilleure estimation possible sans
+  // historique — plutôt que de planter ou d'ignorer ces joueurs. Idem pour
+  // un éventuel champ "name" manquant/corrompu.
+  for (const id of Object.keys(playersDB)) {
+    const rec = playersDB[id];
+    if (!rec || typeof rec !== 'object') { delete playersDB[id]; continue; }
+    if (!Number.isFinite(rec.bankroll)) rec.bankroll = START_BANKROLL;
+    if (!Number.isFinite(rec.record) || rec.record < rec.bankroll) {
+      rec.record = Number.isFinite(rec.record) ? Math.max(rec.record, rec.bankroll) : rec.bankroll;
+    }
+    if (typeof rec.name !== 'string' || !rec.name.trim()) rec.name = randomName();
+  }
+}
+
+// Change le solde d'un joueur et met à jour, si besoin, son record personnel
+// (le solde de jetons le plus élevé jamais atteint). Centralise TOUTE
+// modification de bankroll pour que le record soit toujours à jour, pas
+// seulement en fin de manche.
+function setBankroll(rec, newBankroll) {
+  rec.bankroll = newBankroll;
+  if (!Number.isFinite(rec.record) || rec.bankroll > rec.record) {
+    rec.record = rec.bankroll;
+  }
 }
 
 let saveScheduled = false;
@@ -97,10 +128,54 @@ function randomName() {
 
 function getOrCreatePlayerRecord(playerId) {
   if (!playersDB[playerId]) {
-    playersDB[playerId] = { name: randomName(), bankroll: START_BANKROLL };
+    playersDB[playerId] = { name: randomName(), bankroll: START_BANKROLL, record: START_BANKROLL };
     savePlayersDB();
   }
   return playersDB[playerId];
+}
+
+// Nettoie un pseudo fourni par un client : retire les caractères de
+// contrôle et les espaces superflus, borne la longueur. Le stockage reste
+// du texte brut — AUCUN échappement HTML n'est fait ici. C'est à
+// l'affichage, côté client, que le pseudo doit être injecté en texte pur
+// (textContent / DOM), jamais via innerHTML, pour empêcher un joueur
+// d'injecter du HTML/JS exécuté chez les autres (XSS). Renvoie null si le
+// résultat est vide après nettoyage (mise à jour refusée).
+function sanitizePlayerName(raw) {
+  if (typeof raw !== 'string') return null;
+  // Retire les caracteres de controle (codes 0-31 et 127) sans regex ambigue.
+  let noControl = '';
+  for (const ch of raw) {
+    const code = ch.codePointAt(0);
+    if (code >= 32 && code !== 127) noControl += ch;
+  }
+  const cleaned = noControl.trim().slice(0, MAX_NAME_LENGTH);
+  return cleaned || null;
+}
+
+// Classement global (tous joueurs connus du serveur, toutes tables
+// confondues) par record de jetons décroissant.
+function buildLeaderboard() {
+  return Object.entries(playersDB)
+    .map(([id, rec]) => ({
+      id,
+      name: rec.name || 'Joueur',
+      record: Number.isFinite(rec.record) ? rec.record : (Number.isFinite(rec.bankroll) ? rec.bankroll : START_BANKROLL),
+    }))
+    .sort((a, b) => b.record - a.record)
+    .slice(0, LEADERBOARD_SIZE);
+}
+
+// Nom d'affichage à jour d'un joueur, à utiliser pour tout texte RP généré
+// côté serveur (annonces du croupier, toasts...). playersDB reste la seule
+// source de vérité pour le pseudo : `player.name`, mis en cache sur l'objet
+// joueur d'une table à sa connexion, n'est PAS retouché lors d'un
+// changement de pseudo (voir "setName") pour éviter d'avoir à le
+// resynchroniser sur toutes les tables où ce joueur est connecté en
+// parallèle — on relit donc toujours playersDB directement ici.
+function displayName(playerId) {
+  const rec = playersDB[playerId];
+  return (rec && typeof rec.name === 'string' && rec.name) ? rec.name : 'Joueur';
 }
 
 // ---------- Générateur aléatoire cryptographique ----------
@@ -326,9 +401,17 @@ function serializeState(t) {
     playersCount: t.players.size,
     players: Array.from(t.players.values()).map((p) => ({
       id: p.id,
-      name: p.name,
+      // Le pseudo est toujours relu depuis playersDB (source de vérité
+      // persistée), comme le solde ci-dessous : un changement de pseudo via
+      // "setName" se répercute donc immédiatement, y compris si ce joueur
+      // est aussi connecté sur une autre table en parallèle.
+      name: playersDB[p.id] ? playersDB[p.id].name : p.name,
       connected: p.sockets.size > 0,
       bankroll: playersDB[p.id] ? playersDB[p.id].bankroll : START_BANKROLL,
+      // Record personnel (plus haut solde de jetons jamais atteint), affiché
+      // dans le classement global et, à terme, réutilisable près du solde.
+      record: playersDB[p.id] && Number.isFinite(playersDB[p.id].record) ? playersDB[p.id].record : START_BANKROLL,
+      excluded: !!p.excluded,
       hands: p.hands.map((h) => ({
         bet: h.bet,
         cards: h.cards.map((c) => serializeCard(c, false)),
@@ -366,23 +449,24 @@ function delay(ms) {
 }
 
 // ---------- Actions des joueurs pendant leur tour ----------
+// Renvoie { action, timedOut }. `timedOut` distingue une action reçue à
+// temps (le joueur a cliqué quelque chose, y compris "Rester") d'un
+// "Rester" imposé par le minuteur faute de réponse — c'est ce dernier cas
+// qui alimente le compteur d'exclusion pour inactivité (voir playingPhase).
 function waitForPlayerAction(t, playerId, handIndex) {
   t.currentTurnKey = `${playerId}:${handIndex}`;
   return new Promise((resolve) => {
-    t.currentTurnResolver = (action) => {
+    let settled = false;
+    const settle = (action, timedOut) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(t.currentTurnTimer);
       t.currentTurnResolver = null;
       t.currentTurnKey = null;
-      resolve(action);
+      resolve({ action, timedOut });
     };
-    t.currentTurnTimer = setTimeout(() => {
-      if (t.currentTurnResolver) {
-        const r = t.currentTurnResolver;
-        t.currentTurnResolver = null;
-        t.currentTurnKey = null;
-        r('stand');
-      }
-    }, TURN_TIMEOUT_MS);
+    t.currentTurnResolver = (action) => settle(action, false);
+    t.currentTurnTimer = setTimeout(() => settle('stand', true), TURN_TIMEOUT_MS);
   });
 }
 
@@ -552,7 +636,7 @@ async function dealingPhase(t, activeEntries) {
   }
   for (const [playerId, total] of totalsByPlayer) {
     const rec = getOrCreatePlayerRecord(playerId);
-    rec.bankroll = Math.max(0, rec.bankroll - total);
+    setBankroll(rec, Math.max(0, rec.bankroll - total));
   }
   savePlayersDB();
 
@@ -585,6 +669,19 @@ async function dealingPhase(t, activeEntries) {
 // modifie donc les deux structures à la fois quand on touche `e.handIndex`.
 async function playingPhase(t, activeEntries) {
   t.table.phase = 'playing';
+
+  // Suivi anti-AFK pour cette manche : un joueur qui obtient au moins un
+  // tour (une main à jouer) est ajouté à `roundHadTurn`. S'il agit
+  // volontairement (à temps, quelle que soit l'action, y compris "Rester"
+  // cliqué explicitement) sur au moins UNE de ses mains, il rejoint
+  // `roundActedVoluntarily`. À la fin de la phase, un joueur qui avait un
+  // tour mais n'a agi sur AUCUNE main (tout est passé par le minuteur) voit
+  // son compteur de manches manquées consécutives incrémenté ; sinon il est
+  // remis à zéro. Voir `checkInactivityExclusions` plus bas pour le détail
+  // de l'interprétation "2 manches consécutives".
+  const roundHadTurn = new Set();
+  const roundActedVoluntarily = new Set();
+
   let i = 0;
   while (i < t.table.turnOrder.length) {
     const entry = t.table.turnOrder[i];
@@ -605,13 +702,15 @@ async function playingPhase(t, activeEntries) {
     }
 
     t.table.activeTurn = { playerId, handIndex };
-    t.table.statusMessage = `${player.name} joue sa main`;
+    t.table.statusMessage = `${displayName(playerId)} joue sa main`;
     t.table.statusKind = '';
     broadcastState(t);
+    roundHadTurn.add(playerId);
 
     let turnOver = false;
     while (!turnOver) {
-      const action = await waitForPlayerAction(t, playerId, handIndex);
+      const { action, timedOut } = await waitForPlayerAction(t, playerId, handIndex);
+      if (!timedOut) roundActedVoluntarily.add(playerId);
       hand = player.hands[handIndex];
       if (!hand) { turnOver = true; break; }
 
@@ -629,7 +728,7 @@ async function playingPhase(t, activeEntries) {
       } else if (action === 'double') {
         const rec = getOrCreatePlayerRecord(playerId);
         if (hand.cards.length === 2 && rec.bankroll >= hand.bet) {
-          rec.bankroll -= hand.bet;
+          setBankroll(rec, rec.bankroll - hand.bet);
           hand.bet *= 2;
           hand.doubled = true;
           savePlayersDB();
@@ -648,7 +747,7 @@ async function playingPhase(t, activeEntries) {
         if (canSplit && rec.bankroll >= hand.bet) {
           const isAceSplit = hand.cards[0].rank === 'A';
           const betAmount = hand.bet;
-          rec.bankroll -= betAmount;
+          setBankroll(rec, rec.bankroll - betAmount);
           savePlayersDB();
 
           const handA = {
@@ -707,6 +806,63 @@ async function playingPhase(t, activeEntries) {
     i++;
   }
   t.table.activeTurn = null;
+  checkInactivityExclusions(t, roundHadTurn, roundActedVoluntarily);
+}
+
+// Met à jour le compteur de manches manquées consécutives de chaque joueur
+// qui avait un tour à jouer cette manche, et exclut ceux qui viennent
+// d'atteindre le seuil. Note d'interprétation (précisée dans le cahier des
+// charges) : "2 tours manqués consécutifs" est compris ici comme 2 MANCHES
+// consécutives PARMI CELLES JOUÉES PAR CE JOUEUR où il a laissé passer tout
+// son temps sans agir une seule fois — pas un compte brut de tours manqués
+// toutes manches confondues (une manche où le joueur n'était pas engagé du
+// tout, sans mise, n'interrompt ni ne compte dans la série).
+function checkInactivityExclusions(t, roundHadTurn, roundActedVoluntarily) {
+  for (const playerId of roundHadTurn) {
+    const player = getPlayer(t, playerId);
+    if (!player || player.excluded) continue;
+    if (roundActedVoluntarily.has(playerId)) {
+      player.missedTurnsStreak = 0;
+      continue;
+    }
+    player.missedTurnsStreak = (player.missedTurnsStreak || 0) + 1;
+    if (player.missedTurnsStreak >= MAX_MISSED_ROUNDS_BEFORE_EXCLUSION) {
+      excludePlayerForInactivity(t, player);
+    }
+  }
+}
+
+// Exclut un joueur inactif de la table : il ne peut plus miser/jouer tant
+// qu'il n'a pas explicitement demandé à reprendre sa place (pas de
+// bannissement définitif, juste un signal anti-AFK). Les autres joueurs de
+// la table sont informés via le flux RP habituel (croupier + toast), et le
+// joueur exclu reçoit un message dédié pour afficher son option de retour.
+function excludePlayerForInactivity(t, player) {
+  player.excluded = true;
+  player.missedTurnsStreak = 0;
+  touchTableActivity(t);
+  const name = displayName(player.id);
+  dealerSay(t, `${name} est prié(e) de quitter la table pour inactivité répétée.`, 3200);
+  toast(t, `🚫 ${name} exclu(e) pour inactivité`);
+  broadcastState(t);
+  for (const client of player.sockets) {
+    send(client, { type: 'excludedNotice', message: 'Vous avez été exclu de la table pour inactivité répétée.' });
+  }
+}
+
+// Réintègre à la table un joueur précédemment exclu pour inactivité : ce
+// n'est jamais automatique, uniquement sur demande explicite du joueur
+// (message "rejoinTable") — pas de bannissement définitif, mais pas de
+// retour non plus tant qu'il n'a pas cliqué "Reprendre place à la table".
+function rejoinTableAfterExclusion(t, player) {
+  if (!player.excluded) return;
+  player.excluded = false;
+  player.missedTurnsStreak = 0;
+  touchTableActivity(t);
+  const name = displayName(player.id);
+  dealerSay(t, `${name} reprend place à la table.`, 2400);
+  toast(t, `✅ ${name} de retour à la table`);
+  broadcastState(t);
 }
 
 async function dealerPhase(t) {
@@ -766,8 +922,8 @@ function resolveAllHands(t, activeEntries) {
     if (outcome === 'lose') anyLose = true;
 
     const rec = getOrCreatePlayerRecord(playerId);
-    rec.bankroll += payout;
-    if (rec.bankroll <= 0) rec.bankroll = START_BANKROLL; // filet de sécurité, table amicale
+    setBankroll(rec, rec.bankroll + payout);
+    if (rec.bankroll <= 0) setBankroll(rec, START_BANKROLL); // filet de sécurité, table amicale
   }
   savePlayersDB();
 
@@ -840,6 +996,7 @@ function attachPlayerSocket(t, ws, playerId) {
     playerId,
     name: rec.name,
     bankroll: rec.bankroll,
+    record: rec.record,
     tableCode: t.code,
     isPublicTable: t.isPublic,
   });
@@ -895,6 +1052,12 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'addHand': {
+        // Un joueur exclu pour inactivité ne peut plus miser/jouer tant
+        // qu'il n'a pas explicitement demandé à reprendre sa place (voir
+        // "rejoinTable" ci-dessous) : ce garde-fou est répété sur CHAQUE
+        // action de mise/jeu, pas seulement à l'affichage côté client, pour
+        // rester valable même face à un client modifié ou désynchronisé.
+        if (player.excluded) return;
         if (t.table.phase !== 'betting') return;
         if (player.hands.length >= MAX_HANDS_PER_PLAYER) return;
         player.hands.push(newHand());
@@ -904,6 +1067,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'removeHand': {
+        if (player.excluded) return;
         if (t.table.phase !== 'betting') return;
         const idx = msg.handIndex;
         if (player.hands.length <= 1) return;
@@ -915,6 +1079,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'bet': {
+        if (player.excluded) return;
         if (t.table.phase !== 'betting') return;
         const idx = msg.handIndex;
         const amount = Number(msg.amount);
@@ -930,6 +1095,7 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'clearBet': {
+        if (player.excluded) return;
         if (t.table.phase !== 'betting') return;
         const idx = msg.handIndex;
         if (idx < 0 || idx >= player.hands.length) return;
@@ -943,10 +1109,46 @@ wss.on('connection', (ws) => {
       case 'stand':
       case 'double':
       case 'split': {
+        if (player.excluded) return;
         if (t.table.phase !== 'playing') return;
         if (!t.table.activeTurn || t.table.activeTurn.playerId !== playerId) return;
         touchTableActivity(t);
         submitAction(t, playerId, t.table.activeTurn.handIndex, msg.type);
+        break;
+      }
+      case 'rejoinTable': {
+        // Demande explicite de reprise de place après une exclusion pour
+        // inactivité. Ne fait rien si le joueur n'était pas exclu (bouton
+        // client désynchronisé, double clic...).
+        rejoinTableAfterExclusion(t, player);
+        break;
+      }
+      case 'setName': {
+        // Changement de pseudo : validé et nettoyé côté serveur (longueur,
+        // vide après trim...). Le nom reste stocké en TEXTE BRUT — c'est au
+        // client de l'afficher via textContent (jamais innerHTML) pour
+        // empêcher toute injection HTML/JS chez les autres joueurs (XSS).
+        const cleaned = sanitizePlayerName(msg.name);
+        const rec = getOrCreatePlayerRecord(playerId);
+        if (!cleaned) {
+          send(ws, { type: 'nameUpdateResult', ok: false, reason: 'empty', name: rec.name });
+          break;
+        }
+        rec.name = cleaned;
+        savePlayersDB();
+        touchTableActivity(t);
+        send(ws, { type: 'nameUpdateResult', ok: true, name: cleaned });
+        // Répercute le nouveau pseudo à tous les joueurs de CETTE table en
+        // temps réel (serializeState relit toujours playersDB, voir plus
+        // haut). Si ce joueur est aussi connecté sur une autre table en
+        // parallèle, elle se mettra à jour à sa prochaine diffusion d'état.
+        broadcastState(t);
+        break;
+      }
+      case 'getLeaderboard': {
+        // Classement global (tous joueurs connus du serveur, toutes tables
+        // confondues) : envoyé uniquement au demandeur, pas de diffusion.
+        send(ws, { type: 'leaderboard', entries: buildLeaderboard() });
         break;
       }
       default:

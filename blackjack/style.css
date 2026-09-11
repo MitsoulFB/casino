@@ -146,6 +146,19 @@ button { font-family: inherit; cursor: pointer; }
 .table-pill.private { border-color: rgba(212,175,90,0.6); }
 .table-pill-icon { flex-shrink: 0; }
 
+/* ===== Pill "pseudo" (bouton, reprend le style de .players-pill) ===== */
+.profile-pill {
+  font-family: inherit;
+  color: inherit;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  max-width: 150px;
+}
+.profile-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-pill:hover { background: rgba(212,175,90,0.14); }
+.profile-pill-icon { flex-shrink: 0; }
+
 .bankroll-pill {
   display: flex;
   align-items: center;
@@ -580,6 +593,7 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
   transform: translateY(-4px);
 }
 .hand-pod.empty { opacity: 0.3; }
+.hand-pod.excluded { opacity: 0.45; filter: grayscale(0.5); }
 .hand-pod .cards { min-height: 90px; }
 .hand-pod .card-slot { width: 58px; height: 82px; margin-left: -20px; }
 
@@ -592,6 +606,7 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
   white-space: nowrap;
 }
 .hand-pod-owner .me-badge { color: var(--gold-bright); font-weight: 800; opacity: 1; }
+.hand-pod-owner .excluded-badge { margin-left: 2px; }
 
 .hand-pod-footer { display: flex; align-items: center; gap: 6px; }
 .hand-pod-bet {
@@ -856,6 +871,88 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
 .table-join-input::placeholder { color: rgba(244,234,217,0.35); text-transform: none; letter-spacing: normal; }
 #leaveTableBtn { margin-top: 14px; }
 
+/* ===== Modale pseudo ===== */
+/* Comme .table-join-input mais sans la majuscule/l'espacement forcés (un
+   pseudo garde la casse et les espaces tapés par le joueur). */
+.name-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0,0,0,0.28);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--cream);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.name-input:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
+.name-input::placeholder { color: rgba(244,234,217,0.35); }
+.name-error {
+  margin: 10px 0 0;
+  font-size: 0.8rem;
+  color: var(--red-bright);
+}
+
+/* ===== Modale classement (leaderboard) ===== */
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.22);
+  border: 1px solid transparent;
+}
+.leaderboard-row.mine {
+  border-color: var(--gold-bright);
+  background: rgba(212,175,90,0.1);
+}
+.leaderboard-rank {
+  font-family: var(--font-display);
+  font-weight: 800;
+  color: var(--gold-bright);
+  min-width: 28px;
+}
+.leaderboard-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.leaderboard-record {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--gold-bright);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.leaderboard-loading, .leaderboard-empty {
+  text-align: center;
+  padding: 20px 0;
+  margin: 0;
+  opacity: 0.6;
+  font-style: italic;
+  font-size: 0.9rem;
+}
+
+/* ===== Modale exclusion pour inactivité ===== */
+.exclusion-message {
+  margin: 0 0 18px;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: rgba(244,234,217,0.9);
+}
+
 /* ===== Toast ===== */
 .toast {
   position: fixed;
@@ -891,6 +988,8 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
   .players-label { display: none; }
   .table-pill { max-width: 34px; padding: 5px 8px; }
   .table-pill span:not(.table-pill-icon) { display: none; }
+  .profile-pill { max-width: 34px; padding: 5px 8px; }
+  .profile-pill span:not(.profile-pill-icon) { display: none; }
   .hand-pod .card-slot { width: 44px; height: 62px; margin-left: -16px; }
   .card-slot { width: 60px; height: 84px; margin-left: -20px; }
   .chip { width: 50px; height: 50px; font-size: 0.82rem; }

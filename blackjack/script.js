@@ -52,6 +52,15 @@ function loadCachedBankroll() {
   return Number.isFinite(n) ? n : 1000;
 }
 
+// ---------- Pseudo (cache d'affichage hors-ligne, comme le solde) ----------
+const NAME_CACHE_KEY = 'maison21_name';
+function cacheName(name) {
+  try { localStorage.setItem(NAME_CACHE_KEY, name); } catch { /* ignore */ }
+}
+function loadCachedName() {
+  try { return localStorage.getItem(NAME_CACHE_KEY) || 'Joueur'; } catch { return 'Joueur'; }
+}
+
 // ---------- DOM refs ----------
 const els = {
   bankroll: document.getElementById('bankroll'),
@@ -94,6 +103,23 @@ const els = {
   joinTableInput: document.getElementById('joinTableInput'),
   joinTableBtn: document.getElementById('joinTableBtn'),
   leaveTableBtn: document.getElementById('leaveTableBtn'),
+  // Pseudo personnalisable
+  profilePill: document.getElementById('profilePill'),
+  myNameLabel: document.getElementById('myNameLabel'),
+  nameModal: document.getElementById('nameModal'),
+  closeNameBtn: document.getElementById('closeNameBtn'),
+  nameInput: document.getElementById('nameInput'),
+  saveNameBtn: document.getElementById('saveNameBtn'),
+  nameError: document.getElementById('nameError'),
+  // Classement (leaderboard)
+  leaderboardBtn: document.getElementById('leaderboardBtn'),
+  leaderboardModal: document.getElementById('leaderboardModal'),
+  closeLeaderboardBtn: document.getElementById('closeLeaderboardBtn'),
+  leaderboardList: document.getElementById('leaderboardList'),
+  // Exclusion pour inactivité
+  exclusionModal: document.getElementById('exclusionModal'),
+  exclusionMessage: document.getElementById('exclusionMessage'),
+  rejoinTableBtn: document.getElementById('rejoinTableBtn'),
 };
 
 // ---------- État local ----------
@@ -234,11 +260,30 @@ function renderHandsRow(state) {
       pod.classList.toggle('mine', isMe);
       pod.classList.toggle('active-turn', !!isActive);
       pod.classList.toggle('empty', hand.cards.length === 0 && hand.bet === 0);
+      pod.classList.toggle('excluded', !!player.excluded);
 
-      const ownerLabel = player.hands.length > 1 ? `${player.name} · Main ${handIndex + 1}` : player.name;
-      pod.querySelector('.hand-pod-owner').innerHTML = isMe
-        ? `<span class="me-badge">Vous${player.hands.length > 1 ? ` · Main ${handIndex + 1}` : ''}</span>`
-        : ownerLabel;
+      // Le pseudo est un texte fourni par un joueur (personnalisable via
+      // l'UI, voir setName) : on l'injecte TOUJOURS via textContent, jamais
+      // via innerHTML, pour empêcher toute exécution de HTML/JS injecté
+      // (XSS). Voir aussi sayDealer() plus bas pour la même règle côté
+      // annonces du croupier.
+      const ownerEl = pod.querySelector('.hand-pod-owner');
+      ownerEl.innerHTML = '';
+      if (isMe) {
+        const badge = document.createElement('span');
+        badge.className = 'me-badge';
+        badge.textContent = `Vous${player.hands.length > 1 ? ` · Main ${handIndex + 1}` : ''}`;
+        ownerEl.appendChild(badge);
+      } else {
+        ownerEl.textContent = player.hands.length > 1 ? `${player.name} · Main ${handIndex + 1}` : player.name;
+      }
+      if (player.excluded) {
+        const badge = document.createElement('span');
+        badge.className = 'excluded-badge';
+        badge.textContent = '🚫';
+        badge.title = 'Exclu(e) pour inactivité';
+        ownerEl.appendChild(badge);
+      }
 
       const cardsEl = pod.querySelector('.cards');
       renderCardsIncremental(cardsEl, hand.cards, key, undefined);
@@ -358,9 +403,45 @@ function showToast(msg) {
 }
 
 function sayDealer(text, duration = 2600) {
+  // Le texte peut être composé côté serveur avec un pseudo de joueur (ex.
+  // "X reprend place à la table.") : toujours injecté en textContent,
+  // jamais en innerHTML, pour empêcher une injection HTML/JS (XSS) via un
+  // pseudo personnalisé. Le <span> est recréé "à la main" pour conserver
+  // exactement le même rendu (voir .dealer-callout span en CSS).
   clearTimeout(dealerCalloutTimer);
-  els.dealerCallout.innerHTML = `<span>${text}</span>`;
-  dealerCalloutTimer = setTimeout(() => { els.dealerCallout.innerHTML = ''; }, duration);
+  els.dealerCallout.textContent = '';
+  const span = document.createElement('span');
+  span.textContent = text;
+  els.dealerCallout.appendChild(span);
+  dealerCalloutTimer = setTimeout(() => { els.dealerCallout.textContent = ''; }, duration);
+}
+
+// ---------- Exclusion pour inactivité ----------
+// Ouvre/ferme la modale d'exclusion en fonction de `me.excluded` (issu du
+// dernier "state" reçu). Volontairement, la modale ne se ferme QUE quand le
+// serveur confirme la réintégration (pas de fermeture au clic sur le fond
+// ni de bouton ×) : c'est le clic explicite sur "Reprendre place à la
+// table" qui doit débloquer le joueur, comme demandé au cahier des charges.
+function syncExclusionModal(me) {
+  if (me && me.excluded) {
+    // Ne réécrit pas le message si "excludedNotice" (plus précis, envoyé au
+    // moment de l'exclusion) l'a déjà fait — voir le handler websocket.
+    if (!els.exclusionModal.classList.contains('open')) {
+      els.exclusionMessage.textContent = 'Vous avez manqué votre tour sur deux manches consécutives : vous ne pouvez plus miser ni jouer sur cette table.';
+    }
+    els.exclusionModal.classList.add('open');
+  } else {
+    els.exclusionModal.classList.remove('open');
+  }
+}
+
+// Vrai si le joueur courant est actuellement exclu (d'après le dernier
+// state connu) : sert de garde-fou côté client sur les actions de mise/jeu,
+// en complément du blocage déjà assuré par la modale plein écran ci-dessus
+// et, de toute façon, systématiquement revérifié côté serveur.
+function amIExcluded() {
+  const me = latestState ? myPlayer(latestState) : null;
+  return !!(me && me.excluded);
 }
 
 // ---------- Rendu global à partir d'un "state" serveur ----------
@@ -375,6 +456,20 @@ function render(state) {
   const bankroll = me ? me.bankroll : loadCachedBankroll();
   els.bankroll.textContent = bankroll.toLocaleString('fr-FR');
   cacheBankroll(bankroll);
+
+  // Pseudo (le mien) : toujours resynchronisé depuis le state serveur
+  // (source de vérité), qui reflète immédiatement tout changement via
+  // setName — y compris depuis un autre onglet/appareil du même joueur.
+  if (me && me.name) {
+    els.myNameLabel.textContent = me.name;
+    cacheName(me.name);
+  }
+
+  // Exclusion pour inactivité (2 manches manquées consécutives) : la modale
+  // s'ouvre/se ferme automatiquement en suivant `me.excluded`, y compris
+  // après une reconnexion (pas seulement au moment du message dédié
+  // "excludedNotice", voir le handler websocket plus bas).
+  syncExclusionModal(me);
 
   updateShoeVisual(state.shoe);
   renderDealer(state.dealer);
@@ -453,6 +548,8 @@ function connect() {
     try { msg = JSON.parse(evt.data); } catch { return; }
     if (msg.type === 'welcome') {
       cacheBankroll(msg.bankroll);
+      els.myNameLabel.textContent = msg.name;
+      cacheName(msg.name);
       renderTableInfo(msg.tableCode, msg.isPublicTable);
     } else if (msg.type === 'state') {
       render(msg);
@@ -463,6 +560,26 @@ function connect() {
     } else if (msg.type === 'tableCreated') {
       // Le serveur a généré un code de table privée inédit : on y va.
       location.href = tableUrlFor(msg.tableCode);
+    } else if (msg.type === 'excludedNotice') {
+      // Message dédié envoyé au moment précis de l'exclusion (texte plus
+      // circonstancié que le message générique de secours utilisé par
+      // syncExclusionModal lors d'une reconnexion). Texte brut -> textContent.
+      els.exclusionMessage.textContent = msg.message;
+      els.exclusionModal.classList.add('open');
+    } else if (msg.type === 'nameUpdateResult') {
+      els.saveNameBtn.disabled = false;
+      if (msg.ok) {
+        els.myNameLabel.textContent = msg.name;
+        cacheName(msg.name);
+        els.nameError.hidden = true;
+        els.nameModal.classList.remove('open');
+        showToast('Pseudo mis à jour !');
+      } else {
+        els.nameError.textContent = 'Le pseudo ne peut pas être vide.';
+        els.nameError.hidden = false;
+      }
+    } else if (msg.type === 'leaderboard') {
+      renderLeaderboard(msg.entries);
     }
   });
 
@@ -481,17 +598,20 @@ function connect() {
 }
 
 // ---------- Actions du joueur ----------
+// Chaque action de mise/jeu vérifie `amIExcluded()` en plus du blocage déjà
+// assuré par la modale d'exclusion plein écran (défense en profondeur côté
+// client) ; le serveur revérifie de toute façon systématiquement.
 els.chipRack.addEventListener('click', (e) => {
   const chip = e.target.closest('.chip');
-  if (!chip || chip.disabled) return;
+  if (!chip || chip.disabled || amIExcluded()) return;
   send({ type: 'bet', handIndex: selectedHandIndex, amount: parseInt(chip.dataset.value, 10) });
 });
-els.clearBetBtn.addEventListener('click', () => send({ type: 'clearBet', handIndex: selectedHandIndex }));
-els.addHandBtn.addEventListener('click', () => send({ type: 'addHand' }));
-els.hitBtn.addEventListener('click', () => send({ type: 'hit' }));
-els.standBtn.addEventListener('click', () => send({ type: 'stand' }));
-els.doubleBtn.addEventListener('click', () => send({ type: 'double' }));
-els.splitBtn.addEventListener('click', () => { if (!els.splitBtn.disabled) send({ type: 'split' }); });
+els.clearBetBtn.addEventListener('click', () => { if (!amIExcluded()) send({ type: 'clearBet', handIndex: selectedHandIndex }); });
+els.addHandBtn.addEventListener('click', () => { if (!amIExcluded()) send({ type: 'addHand' }); });
+els.hitBtn.addEventListener('click', () => { if (!amIExcluded()) send({ type: 'hit' }); });
+els.standBtn.addEventListener('click', () => { if (!amIExcluded()) send({ type: 'stand' }); });
+els.doubleBtn.addEventListener('click', () => { if (!amIExcluded()) send({ type: 'double' }); });
+els.splitBtn.addEventListener('click', () => { if (!els.splitBtn.disabled && !amIExcluded()) send({ type: 'split' }); });
 
 els.rulesBtn.addEventListener('click', () => els.rulesModal.classList.add('open'));
 els.closeRulesBtn.addEventListener('click', () => els.rulesModal.classList.remove('open'));
@@ -499,8 +619,14 @@ els.rulesModal.addEventListener('click', (e) => {
   if (e.target === els.rulesModal) els.rulesModal.classList.remove('open');
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') els.rulesModal.classList.remove('open');
-  if (!latestState) return;
+  if (e.key === 'Escape') {
+    els.rulesModal.classList.remove('open');
+    els.tableModal.classList.remove('open');
+    els.nameModal.classList.remove('open');
+    els.leaderboardModal.classList.remove('open');
+    // Pas de fermeture au clavier pour la modale d'exclusion : volontaire.
+  }
+  if (!latestState || amIExcluded()) return;
   const myTurn = latestState.phase === 'playing' && latestState.activeTurn && latestState.activeTurn.playerId === myPlayerId;
   if (myTurn) {
     if (e.key.toLowerCase() === 'h') send({ type: 'hit' });
@@ -572,6 +698,107 @@ function renderTableInfo(tableCode, isPublicTable) {
   els.leaveTableBtn.addEventListener('click', () => {
     const basePath = location.pathname.replace(/[^/]*$/, '');
     location.href = `${location.origin}${basePath}`;
+  });
+})();
+
+// ---------- Pseudo personnalisable ----------
+(function initNameModal() {
+  if (!els.profilePill || !els.nameModal) return;
+
+  els.profilePill.addEventListener('click', () => {
+    const me = latestState ? myPlayer(latestState) : null;
+    els.nameInput.value = (me && me.name) || loadCachedName();
+    els.nameError.hidden = true;
+    els.nameModal.classList.add('open');
+    els.nameInput.focus();
+  });
+  els.closeNameBtn.addEventListener('click', () => els.nameModal.classList.remove('open'));
+  els.nameModal.addEventListener('click', (e) => {
+    if (e.target === els.nameModal) els.nameModal.classList.remove('open');
+  });
+
+  function submitNameChange() {
+    const value = els.nameInput.value.trim();
+    if (!value) {
+      els.nameError.textContent = 'Le pseudo ne peut pas être vide.';
+      els.nameError.hidden = false;
+      return;
+    }
+    els.nameError.hidden = true;
+    els.saveNameBtn.disabled = true;
+    // Validation finale (longueur, vide après trim) faite côté serveur —
+    // ceci n'est qu'un pré-contrôle pour un retour instantané.
+    send({ type: 'setName', name: value.slice(0, 20) });
+    // Filet de sécurité si la réponse tarde/n'arrive pas (socket coupé).
+    setTimeout(() => { els.saveNameBtn.disabled = false; }, 4000);
+  }
+  els.saveNameBtn.addEventListener('click', submitNameChange);
+  els.nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitNameChange();
+  });
+})();
+
+// ---------- Classement (leaderboard) ----------
+function renderLeaderboard(entries) {
+  els.leaderboardList.innerHTML = '';
+  if (!entries || entries.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'leaderboard-empty';
+    empty.textContent = 'Aucun joueur enregistré pour le moment.';
+    els.leaderboardList.appendChild(empty);
+    return;
+  }
+  entries.forEach((entry, i) => {
+    const row = document.createElement('div');
+    row.className = 'leaderboard-row' + (entry.id === myPlayerId ? ' mine' : '');
+
+    const rank = document.createElement('span');
+    rank.className = 'leaderboard-rank';
+    rank.textContent = `#${i + 1}`;
+
+    const name = document.createElement('span');
+    name.className = 'leaderboard-name';
+    // Pseudo potentiellement personnalisé par un joueur : toujours en
+    // textContent (jamais innerHTML), pour empêcher toute injection
+    // HTML/JS (XSS) — voir aussi renderHandsRow() et sayDealer().
+    name.textContent = entry.name;
+
+    const record = document.createElement('span');
+    record.className = 'leaderboard-record';
+    record.textContent = `${entry.record.toLocaleString('fr-FR')} jetons`;
+
+    row.appendChild(rank);
+    row.appendChild(name);
+    row.appendChild(record);
+    els.leaderboardList.appendChild(row);
+  });
+}
+
+(function initLeaderboardModal() {
+  if (!els.leaderboardBtn || !els.leaderboardModal) return;
+
+  els.leaderboardBtn.addEventListener('click', () => {
+    els.leaderboardList.innerHTML = '<p class="leaderboard-loading">Chargement du classement…</p>';
+    els.leaderboardModal.classList.add('open');
+    send({ type: 'getLeaderboard' });
+  });
+  els.closeLeaderboardBtn.addEventListener('click', () => els.leaderboardModal.classList.remove('open'));
+  els.leaderboardModal.addEventListener('click', (e) => {
+    if (e.target === els.leaderboardModal) els.leaderboardModal.classList.remove('open');
+  });
+})();
+
+// ---------- Exclusion pour inactivité : bouton de reprise ----------
+(function initExclusionModal() {
+  if (!els.rejoinTableBtn) return;
+  els.rejoinTableBtn.addEventListener('click', () => {
+    els.rejoinTableBtn.disabled = true;
+    send({ type: 'rejoinTable' });
+    // Filet de sécurité si la réponse tarde/n'arrive pas (socket coupé) :
+    // la modale se refermera de toute façon dès que le state confirmera la
+    // réintégration (voir syncExclusionModal), mais on redonne la main sur
+    // le bouton si rien ne vient.
+    setTimeout(() => { els.rejoinTableBtn.disabled = false; }, 4000);
   });
 })();
 
