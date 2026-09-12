@@ -183,9 +183,10 @@ const DEALER_LINES = {
 };
 
 const HUMAN_AVATARS = ['🧑', '👩', '🧔', '👨', '🧑‍🦱', '👩‍🦰', '🧑‍🦳', '👨‍🦲'];
+const LEADERBOARD_SIZE = 10; // taille du top affiché (tous les joueurs connus si moins nombreux)
 
 // ---------- Persistance des soldes (globale, sur disque) ----------
-// { [playerId]: { name, bankroll } }
+// { [playerId]: { name, bankroll, record } }
 let playersDB = {};
 
 function loadPlayersDB() {
@@ -194,6 +195,20 @@ function loadPlayersDB() {
     playersDB = JSON.parse(raw);
   } catch {
     playersDB = {};
+  }
+  // Migration douce : les entrées enregistrées avant l'ajout du classement
+  // n'ont pas de champ "record" (plus haut solde de jetons jamais atteint).
+  // On l'initialise au solde actuel — la meilleure estimation possible sans
+  // historique — plutôt que de planter ou d'ignorer ces joueurs. Idem pour
+  // un éventuel champ "name" manquant/corrompu.
+  for (const id of Object.keys(playersDB)) {
+    const rec = playersDB[id];
+    if (!rec || typeof rec !== 'object') { delete playersDB[id]; continue; }
+    if (!Number.isFinite(rec.bankroll)) rec.bankroll = START_BANKROLL;
+    if (!Number.isFinite(rec.record) || rec.record < rec.bankroll) {
+      rec.record = Number.isFinite(rec.record) ? Math.max(rec.record, rec.bankroll) : rec.bankroll;
+    }
+    if (typeof rec.name !== 'string' || !rec.name.trim()) rec.name = randomName();
   }
 }
 
@@ -225,17 +240,43 @@ function sanitizeName(raw) {
 
 function getOrCreatePlayerRecord(playerId, initialName) {
   if (!playersDB[playerId]) {
-    playersDB[playerId] = { name: sanitizeName(initialName) || randomName(), bankroll: START_BANKROLL };
+    playersDB[playerId] = { name: sanitizeName(initialName) || randomName(), bankroll: START_BANKROLL, record: START_BANKROLL };
     savePlayersDB();
   }
   return playersDB[playerId];
 }
 
+// Change le solde d'un joueur et met à jour, si besoin, son record personnel
+// (le solde de jetons le plus élevé jamais atteint). Centralise TOUTE
+// modification de bankroll (voir persistHumanBankroll, seul point d'écriture
+// du solde) pour que le record soit toujours à jour, pas seulement en fin de
+// main.
+function setBankroll(rec, newBankroll) {
+  rec.bankroll = newBankroll;
+  if (!Number.isFinite(rec.record) || rec.bankroll > rec.record) {
+    rec.record = rec.bankroll;
+  }
+}
+
 function persistHumanBankroll(seat) {
   if (seat.type !== 'human' || !seat.playerId) return;
   const rec = getOrCreatePlayerRecord(seat.playerId);
-  rec.bankroll = seat.stack;
+  setBankroll(rec, seat.stack);
   savePlayersDB();
+}
+
+// Classement global (tous les joueurs connus du serveur) par record de
+// jetons décroissant. Les IA n'ont pas d'entrée dans playersDB (seuls les
+// humains y sont persistés), elles n'apparaissent donc jamais ici.
+function buildLeaderboard() {
+  return Object.entries(playersDB)
+    .map(([id, rec]) => ({
+      id,
+      name: rec.name || 'Joueur',
+      record: Number.isFinite(rec.record) ? rec.record : (Number.isFinite(rec.bankroll) ? rec.bankroll : START_BANKROLL),
+    }))
+    .sort((a, b) => b.record - a.record)
+    .slice(0, LEADERBOARD_SIZE);
 }
 
 function pickHumanAvatar(playerId) {
@@ -1087,6 +1128,10 @@ function buildStateForViewer(viewerPlayerId) {
         playerId: viewerPlayerId,
         name: rec.name,
         bankroll: viewerSeat.stack,
+        // Record personnel (plus haut solde de jetons jamais atteint), pour
+        // un affichage éventuel près du solde ; utilisé aussi par le
+        // panneau de classement (voir buildLeaderboard / "getLeaderboard").
+        record: Number.isFinite(rec.record) ? rec.record : viewerSeat.stack,
         seatIndex: viewerSeat.index,
         waiting: false,
         toCall: call,
@@ -1107,6 +1152,7 @@ function buildStateForViewer(viewerPlayerId) {
         playerId: viewerPlayerId,
         name: rec.name,
         bankroll: rec.bankroll,
+        record: Number.isFinite(rec.record) ? rec.record : rec.bankroll,
         seatIndex: null,
         waiting: true,
       };
@@ -1250,7 +1296,7 @@ wss.on('connection', (ws) => {
       ws.playerId = playerId;
       const rec = getOrCreatePlayerRecord(playerId, msg.name);
       attachSocket(ws, playerId);
-      send(ws, { type: 'welcome', playerId, name: rec.name, bankroll: rec.bankroll });
+      send(ws, { type: 'welcome', playerId, name: rec.name, bankroll: rec.bankroll, record: rec.record });
       wakeLoop();
       broadcastState();
       return;
@@ -1268,6 +1314,13 @@ wss.on('connection', (ws) => {
       const seat = findSeatByPlayerId(playerId);
       if (seat) seat.name = name;
       broadcastState();
+      return;
+    }
+
+    if (msg.type === 'getLeaderboard') {
+      // Classement global (tous joueurs connus du serveur) : envoyé
+      // uniquement au demandeur, pas de diffusion à toute la table.
+      send(ws, { type: 'leaderboard', entries: buildLeaderboard() });
       return;
     }
 

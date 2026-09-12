@@ -56,6 +56,12 @@ const els = {
   closeRulesBtn: document.getElementById('closeRulesBtn'),
   rulesModal: document.getElementById('rulesModal'),
 
+  // Classement (leaderboard)
+  leaderboardBtn: document.getElementById('leaderboardBtn'),
+  leaderboardModal: document.getElementById('leaderboardModal'),
+  closeLeaderboardBtn: document.getElementById('closeLeaderboardBtn'),
+  leaderboardList: document.getElementById('leaderboardList'),
+
   handSubText: document.getElementById('handSubText'),
   seatsRing: document.getElementById('seatsRing'),
   communityCards: document.getElementById('communityCards'),
@@ -461,6 +467,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     els.rulesModal.classList.remove('open');
     els.nameModal.classList.remove('open');
+    if (els.leaderboardModal) els.leaderboardModal.classList.remove('open');
     if (raiseOpen && latestState) closeRaiseZone(latestState);
     return;
   }
@@ -556,6 +563,56 @@ els.closeRulesBtn.addEventListener('click', () => els.rulesModal.classList.remov
 els.rulesModal.addEventListener('click', (e) => { if (e.target === els.rulesModal) els.rulesModal.classList.remove('open'); });
 
 // ============================================================
+// CLASSEMENT (leaderboard)
+// ============================================================
+function renderLeaderboard(entries) {
+  els.leaderboardList.innerHTML = '';
+  if (!entries || entries.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'leaderboard-empty';
+    empty.textContent = 'Aucun joueur enregistré pour le moment.';
+    els.leaderboardList.appendChild(empty);
+    return;
+  }
+  entries.forEach((entry, i) => {
+    const row = document.createElement('div');
+    row.className = 'leaderboard-row' + (entry.id === myPlayerId ? ' mine' : '');
+
+    const rank = document.createElement('span');
+    rank.className = 'leaderboard-rank';
+    rank.textContent = `#${i + 1}`;
+
+    const name = document.createElement('span');
+    name.className = 'leaderboard-name';
+    // Pseudo potentiellement personnalisé par un joueur : toujours en
+    // textContent (jamais innerHTML), pour empêcher toute injection
+    // HTML/JS (XSS) — voir aussi updateSeatSlot() plus haut.
+    name.textContent = entry.name;
+
+    const record = document.createElement('span');
+    record.className = 'leaderboard-record';
+    record.textContent = `${entry.record.toLocaleString('fr-FR')} jetons`;
+
+    row.appendChild(rank);
+    row.appendChild(name);
+    row.appendChild(record);
+    els.leaderboardList.appendChild(row);
+  });
+}
+
+if (els.leaderboardBtn && els.leaderboardModal) {
+  els.leaderboardBtn.addEventListener('click', () => {
+    els.leaderboardList.innerHTML = '<p class="leaderboard-loading">Chargement du classement…</p>';
+    els.leaderboardModal.classList.add('open');
+    send({ type: 'getLeaderboard' });
+  });
+  els.closeLeaderboardBtn.addEventListener('click', () => els.leaderboardModal.classList.remove('open'));
+  els.leaderboardModal.addEventListener('click', (e) => {
+    if (e.target === els.leaderboardModal) els.leaderboardModal.classList.remove('open');
+  });
+}
+
+// ============================================================
 // CONNEXION WEBSOCKET (avec reconnexion automatique)
 // ============================================================
 let ws = null;
@@ -621,6 +678,8 @@ function connect() {
       const pos = ((msg.seatIndex - rotationOffset) % SEAT_COUNT + SEAT_COUNT) % SEAT_COUNT;
       const slot = seatSlots[pos];
       if (slot) showCallout(slot.callout, msg.text, msg.duration || 2400);
+    } else if (msg.type === 'leaderboard') {
+      renderLeaderboard(msg.entries);
     }
   });
 

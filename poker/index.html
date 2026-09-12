@@ -45,6 +45,7 @@
         <span class="game-menu-item current"><span class="gm-icon">♣️</span><span>Poker Texas Hold'em</span></span>
       </div>
     </div>
+    <button class="icon-btn" id="leaderboardBtn" title="Classement" aria-label="Classement">🏆</button>
     <button class="icon-btn" id="rulesBtn" title="Règles du jeu" aria-label="Règles du jeu">?</button>
   </header>
 
@@ -127,6 +128,21 @@
         <li>Votre solde de jetons est sauvegardé automatiquement sur le serveur. Si vous tombez à <strong>0 jeton</strong>, un rachat automatique de 1000 jetons est appliqué avant la main suivante.</li>
       </ul>
       <p class="modal-note">Jeu 100% gratuit, à but purement ludique — aucune monnaie réelle n'est utilisée.</p>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="leaderboardModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>🏆 Classement</h2>
+      <button class="icon-btn" id="closeLeaderboardBtn" aria-label="Fermer">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="leaderboard-list" id="leaderboardList">
+        <p class="leaderboard-loading">Chargement du classement…</p>
+      </div>
+      <p class="modal-note">Record personnel : le plus haut solde de jetons jamais atteint par chaque joueur à la table.</p>
     </div>
   </div>
 </div>
