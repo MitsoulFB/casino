@@ -120,6 +120,7 @@ const els = {
   exclusionModal: document.getElementById('exclusionModal'),
   exclusionMessage: document.getElementById('exclusionMessage'),
   rejoinTableBtn: document.getElementById('rejoinTableBtn'),
+  soundBtn: document.getElementById('soundBtn'),
 };
 
 // ---------- État local ----------
@@ -129,6 +130,7 @@ let dealerCalloutTimer = null;
 let bettingTickInterval = null;
 const cardRenderCache = new Map(); // key -> { count, holeRevealed }
 const podElements = new Map();     // key -> DOM element du pod de main
+const soundedResultKeys = new Set(); // clés de main pour lesquelles le son de résultat a déjà joué
 
 // ---------- Rendu des cartes ----------
 function renderCardFace(card) {
@@ -160,7 +162,7 @@ function makeCardSlot(card) {
 // des mises à jour qui ne concernent pas cette main).
 function renderCardsIncremental(container, cardsData, cacheKey, holeRevealed) {
   let cache = cardRenderCache.get(cacheKey);
-  if (!cache) { cache = { count: 0, holeRevealed: false }; cardRenderCache.set(cacheKey, cache); }
+  if (!cache) { cache = { count: 0, holeRevealed: false, initialized: false }; cardRenderCache.set(cacheKey, cache); }
 
   if (cardsData.length < cache.count) {
     container.innerHTML = '';
@@ -168,9 +170,20 @@ function renderCardsIncremental(container, cardsData, cacheKey, holeRevealed) {
     cache.holeRevealed = false;
   }
 
+  // Son de distribution : uniquement pour de vraies nouvelles cartes en
+  // cours de partie, jamais lors du tout premier rendu d'une main (chargement
+  // de page / reconnexion), pour éviter une rafale de sons sur un état déjà
+  // établi. Léger décalage entre cartes simultanées pour rester lisible.
+  const isFreshDeal = cache.initialized;
+  let dealDelay = 0;
   for (let i = cache.count; i < cardsData.length; i++) {
     container.appendChild(makeCardSlot(cardsData[i]));
+    if (isFreshDeal) {
+      setTimeout(() => Maison21Sound.cardDeal(), dealDelay);
+      dealDelay += 90;
+    }
   }
+  cache.initialized = true;
 
   // Révélation de la carte cachée du croupier : on remplace le contenu
   // du slot existant plutôt que de le recréer, pour un rendu propre.
@@ -301,9 +314,21 @@ function renderHandsRow(state) {
         const txt = hand.result === 'win' ? `+${hand.payout}` : hand.result === 'push' ? 'Push' : 'Perdu';
         resultEl.textContent = txt;
         resultEl.className = `hand-pod-result ${hand.result}`;
+        // Son de résultat : uniquement pour MES propres mains, et une seule
+        // fois par résolution (pas à chaque re-rendu tant que le résultat
+        // reste affiché) — voir soundedResultKeys plus bas.
+        if (isMe && !soundedResultKeys.has(key)) {
+          soundedResultKeys.add(key);
+          const isNaturalBlackjack = hand.result === 'win' && !hand.fromSplit && hand.cards.length === 2 && hand.total === 21;
+          if (isNaturalBlackjack) Maison21Sound.blackjackWin();
+          else if (hand.result === 'win') Maison21Sound.win();
+          else if (hand.result === 'push') Maison21Sound.push();
+          else Maison21Sound.lose();
+        }
       } else {
         resultEl.textContent = '';
         resultEl.className = 'hand-pod-result';
+        soundedResultKeys.delete(key);
       }
     });
   });
@@ -604,6 +629,7 @@ function connect() {
 els.chipRack.addEventListener('click', (e) => {
   const chip = e.target.closest('.chip');
   if (!chip || chip.disabled || amIExcluded()) return;
+  Maison21Sound.chip();
   send({ type: 'bet', handIndex: selectedHandIndex, amount: parseInt(chip.dataset.value, 10) });
 });
 els.clearBetBtn.addEventListener('click', () => { if (!amIExcluded()) send({ type: 'clearBet', handIndex: selectedHandIndex }); });
@@ -612,6 +638,21 @@ els.hitBtn.addEventListener('click', () => { if (!amIExcluded()) send({ type: 'h
 els.standBtn.addEventListener('click', () => { if (!amIExcluded()) send({ type: 'stand' }); });
 els.doubleBtn.addEventListener('click', () => { if (!amIExcluded()) send({ type: 'double' }); });
 els.splitBtn.addEventListener('click', () => { if (!els.splitBtn.disabled && !amIExcluded()) send({ type: 'split' }); });
+
+// ---------- Son ----------
+// L'AudioContext ne peut démarrer qu'après un geste utilisateur : on
+// "amorce" donc l'audio au tout premier clic sur la page, quel qu'il soit
+// (une seule fois suffit, { once: true }), pour éviter tout avertissement
+// navigateur et permettre aux sons de jouer dès la première vraie action.
+document.addEventListener('click', () => Maison21Sound.primeAudio(), { once: true });
+
+function updateSoundBtn() {
+  const muted = Maison21Sound.isMuted();
+  els.soundBtn.textContent = muted ? '🔇' : '🔊';
+  els.soundBtn.title = muted ? 'Activer le son' : 'Couper le son';
+}
+els.soundBtn.addEventListener('click', () => { Maison21Sound.toggleMuted(); updateSoundBtn(); });
+updateSoundBtn();
 
 els.rulesBtn.addEventListener('click', () => els.rulesModal.classList.add('open'));
 els.closeRulesBtn.addEventListener('click', () => els.rulesModal.classList.remove('open'));

@@ -977,8 +977,13 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
   /* Sur mobile, la page n'a pas de défilement (hauteur fixe) : le bandeau
      du haut doit impérativement tenir sur une seule ligne, sinon il vole
      de la hauteur à la table de jeu. */
-  .topbar { padding: 8px 10px; gap: 6px; flex-wrap: nowrap; }
-  .topbar-right { gap: 5px; flex-wrap: nowrap; }
+  /* Le bandeau du haut porte désormais 4 boutons ronds (menu, classement,
+     son, règles) en plus des 3 pastilles (table/joueurs/pseudo/solde) : ça
+     ne tient plus sur une seule ligne à 375px. On autorise le retour à la
+     ligne ici (2e ligne alignée à droite) plutôt que de laisser déborder
+     des icônes hors écran. */
+  .topbar { padding: 8px 10px; gap: 4px 6px; flex-wrap: wrap; }
+  .topbar-right { gap: 4px 5px; flex-wrap: wrap; justify-content: flex-end; }
   .brand { gap: 5px; }
   .brand-name { font-size: 0.92rem; }
   .brand-icon { font-size: 1.2rem; }
