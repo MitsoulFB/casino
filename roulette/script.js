@@ -92,6 +92,7 @@ const els = {
   wheel: document.getElementById('wheel'),
   ballPivot: document.getElementById('ballPivot'),
   historyStrip: document.getElementById('historyStrip'),
+  soundBtn: document.getElementById('soundBtn'),
 };
 
 // ---------- État local (purement d'affichage) ----------
@@ -586,8 +587,13 @@ function onResolved(state, agg) {
   const me = myPlayer(state);
   if (me && me.lastResult && me.lastResult.totalBet > 0) {
     const { winnings } = me.lastResult;
-    if (winnings > 0) showToast(`${n} — Vous gagnez ${winnings.toLocaleString('fr-FR')} jetons !`);
-    else showToast(`${n} — Vous perdez ce tour`);
+    if (winnings > 0) {
+      showToast(`${n} — Vous gagnez ${winnings.toLocaleString('fr-FR')} jetons !`);
+      Maison21Sound.win();
+    } else {
+      showToast(`${n} — Vous perdez ce tour`);
+      Maison21Sound.lose();
+    }
   }
 }
 
@@ -613,6 +619,12 @@ function spinWheelTo(number) {
 
   els.wheel.style.transform = `rotate(${wheelRotation}deg)`;
   els.ballPivot.style.transform = `rotate(${ballRotation}deg)`;
+
+  // Bille qui roule puis se pose : durée alignée sur la transition CSS de
+  // la bille (4.6s, voir .ball-pivot dans style.css).
+  const SPIN_DURATION_S = 4.6;
+  Maison21Sound.ballRoll(SPIN_DURATION_S);
+  setTimeout(() => Maison21Sound.ballLand(), SPIN_DURATION_S * 1000);
 }
 
 // ---------- Mises : envoi au serveur ----------
@@ -626,6 +638,7 @@ function placeBet(betId) {
     showToast('Fonds insuffisants pour ce jeton');
     return;
   }
+  Maison21Sound.chip();
   send({ type: 'bet', betId, amount: selectedChip });
 }
 
@@ -750,6 +763,17 @@ els.chipRack.addEventListener('click', (e) => {
 els.undoBetBtn.addEventListener('click', () => send({ type: 'undoBet' }));
 els.clearBetBtn.addEventListener('click', () => send({ type: 'clearBets' }));
 els.readyBtn.addEventListener('click', () => { if (!els.readyBtn.disabled) send({ type: 'ready' }); });
+
+// ---------- Son ----------
+document.addEventListener('click', () => Maison21Sound.primeAudio(), { once: true });
+
+function updateSoundBtn() {
+  const muted = Maison21Sound.isMuted();
+  els.soundBtn.textContent = muted ? '🔇' : '🔊';
+  els.soundBtn.title = muted ? 'Activer le son' : 'Couper le son';
+}
+els.soundBtn.addEventListener('click', () => { Maison21Sound.toggleMuted(); updateSoundBtn(); });
+updateSoundBtn();
 
 els.rulesBtn.addEventListener('click', () => els.rulesModal.classList.add('open'));
 els.closeRulesBtn.addEventListener('click', () => els.rulesModal.classList.remove('open'));

@@ -984,8 +984,12 @@ button.players-pill:hover { background: rgba(212, 175, 90, 0.14); }
   .brand-sub { display: none; }
   .brand { font-size: 1.05rem; }
 
-  .topbar { padding: 10px 8px; gap: 4px; flex-wrap: nowrap; }
-  .topbar-right { gap: 5px; }
+  /* 5 boutons ronds (menu/classement/son/règles + retour) + 3 pastilles ne
+     tiennent plus sur une seule ligne à 480px : on autorise le retour à la
+     ligne (la page défile déjà verticalement, contrairement au blackjack)
+     plutôt que de laisser des icônes déborder hors écran. */
+  .topbar { padding: 10px 8px; gap: 4px 6px; flex-wrap: wrap; }
+  .topbar-right { gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
   .icon-btn { width: 30px; height: 30px; font-size: 0.9rem; flex-shrink: 0; }
   .brand-icon { font-size: 1.15rem; }
   .bankroll-pill { padding: 5px 8px; gap: 4px; font-size: 0.76rem; }
