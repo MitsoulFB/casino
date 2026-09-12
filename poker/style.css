@@ -813,7 +813,12 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
 
 /* ===== Responsive ===== */
 @media (max-width: 480px) {
-  .topbar { padding: 8px 10px; gap: 6px; flex-wrap: nowrap; }
+  /* Identité + menu + classement + son + règles ne tiennent plus sur une
+     seule ligne à 375px : on autorise le retour à la ligne (2e ligne
+     alignée à droite) plutôt que de laisser déborder des icônes hors
+     écran — la table perd un peu de hauteur mais reste entièrement visible. */
+  .topbar { padding: 8px 10px; gap: 4px 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .topbar .brand { margin-right: auto; }
   .brand { gap: 5px; }
   .brand-name { font-size: 0.85rem; }
   .brand-name small { display: none; }

@@ -55,6 +55,7 @@ const els = {
   rulesBtn: document.getElementById('rulesBtn'),
   closeRulesBtn: document.getElementById('closeRulesBtn'),
   rulesModal: document.getElementById('rulesModal'),
+  soundBtn: document.getElementById('soundBtn'),
 
   // Classement (leaderboard)
   leaderboardBtn: document.getElementById('leaderboardBtn'),
@@ -147,11 +148,23 @@ function createCardSlot(card) {
 // Synchronise le contenu d'un conteneur de cartes avec le tableau
 // `cards` reçu du serveur, sans tout reconstruire (pour préserver les
 // animations CSS et éviter un flip visuel intempestif).
+// Conteneurs déjà rendus au moins une fois : sert à ne PAS jouer le son de
+// distribution lors du tout premier rendu (chargement de page/reconnexion,
+// où toutes les cartes déjà en jeu apparaissent d'un coup).
+const cardContainersSeen = new WeakSet();
+
 function syncCards(container, cards) {
+  const isFirstRender = !cardContainersSeen.has(container);
+  cardContainersSeen.add(container);
+  const hadChildren = container.children.length;
   while (container.children.length > cards.length) container.removeChild(container.lastChild);
   cards.forEach((card, i) => {
     let slot = container.children[i];
-    if (!slot) { container.appendChild(createCardSlot(card)); return; }
+    if (!slot) {
+      container.appendChild(createCardSlot(card));
+      if (!isFirstRender && i >= hadChildren) Maison21Sound.cardDeal();
+      return;
+    }
     const isHidden = !!card.hidden;
     const wasHidden = slot.dataset.hidden === '1';
     if (wasHidden && !isHidden) {
@@ -287,6 +300,7 @@ function updateSeatSlot(slot, seatData, ctx) {
 // ÉTAT COURANT + BOUCLE DE RENDU PRINCIPALE
 // ============================================================
 let latestState = null;
+let lastSoundedWinHand = -1; // numéro de main pour laquelle le chime de victoire a déjà joué
 
 function render(state) {
   latestState = state;
@@ -327,6 +341,18 @@ function render(state) {
   els.statusMessage.textContent = state.statusMessage || '';
   els.statusMessage.className = 'status-message';
   if (state.statusKind) els.statusMessage.classList.add(state.statusKind);
+
+  // Chime de victoire au showdown : une seule fois par main gagnée, et
+  // uniquement si MON siège fait partie des gagnants.
+  if (
+    state.street === 'showdown' &&
+    state.you && state.you.seatIndex != null &&
+    ctx.winners.includes(state.you.seatIndex) &&
+    state.handNumber !== lastSoundedWinHand
+  ) {
+    lastSoundedWinHand = state.handNumber;
+    Maison21Sound.win();
+  }
 
   if (state.nextHandAt) {
     tickNextHand(); // démarre/relance le compte à rebours affiché
@@ -430,9 +456,10 @@ function clampSlider(v) {
   return Math.min(Math.max(v, min), max);
 }
 
-els.foldBtn.addEventListener('click', () => send({ type: 'action', action: 'fold' }));
+els.foldBtn.addEventListener('click', () => { Maison21Sound.fold(); send({ type: 'action', action: 'fold' }); });
 els.checkCallBtn.addEventListener('click', () => {
   if (!latestState || !latestState.you) return;
+  Maison21Sound.betAction();
   send({ type: 'action', action: latestState.you.toCall > 0 ? 'call' : 'check' });
 });
 els.raiseBtn.addEventListener('click', () => { if (latestState) openRaiseZone(latestState); });
@@ -458,6 +485,7 @@ els.presetAllin.addEventListener('click', () => {
 });
 els.confirmRaiseBtn.addEventListener('click', () => {
   const amount = parseInt(els.raiseSlider.value, 10);
+  Maison21Sound.betAction();
   send({ type: 'action', action: 'raise', amount });
   raiseOpen = false;
 });
@@ -558,6 +586,17 @@ function checkAutoRebuy(state) {
 // ============================================================
 // RÈGLES (modale)
 // ============================================================
+// ---------- Son ----------
+document.addEventListener('click', () => Maison21Sound.primeAudio(), { once: true });
+
+function updateSoundBtn() {
+  const muted = Maison21Sound.isMuted();
+  els.soundBtn.textContent = muted ? '🔇' : '🔊';
+  els.soundBtn.title = muted ? 'Activer le son' : 'Couper le son';
+}
+els.soundBtn.addEventListener('click', () => { Maison21Sound.toggleMuted(); updateSoundBtn(); });
+updateSoundBtn();
+
 els.rulesBtn.addEventListener('click', () => els.rulesModal.classList.add('open'));
 els.closeRulesBtn.addEventListener('click', () => els.rulesModal.classList.remove('open'));
 els.rulesModal.addEventListener('click', (e) => { if (e.target === els.rulesModal) els.rulesModal.classList.remove('open'); });
