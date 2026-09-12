@@ -40,9 +40,10 @@ const EMPTY_ROUND_PAUSE_MS = Number(process.env.EMPTY_ROUND_PAUSE_MS) || 3000; /
 
 const ALLOWED_CHIP_VALUES = new Set([5, 25, 100, 500]);
 const MAX_NAME_LENGTH = 18;
+const LEADERBOARD_SIZE = 10; // taille du top affiché (tous les joueurs connus si moins nombreux)
 
 // ---------- Persistance des soldes ----------
-// { [playerId]: { name, bankroll } }
+// { [playerId]: { name, bankroll, record } }
 let playersDB = {};
 
 function loadPlayersDB() {
@@ -51,6 +52,20 @@ function loadPlayersDB() {
     playersDB = JSON.parse(raw);
   } catch {
     playersDB = {};
+  }
+  // Migration douce : les entrées enregistrées avant l'ajout du classement
+  // n'ont pas de champ "record" (plus haut solde de jetons jamais atteint).
+  // On l'initialise au solde actuel — la meilleure estimation possible sans
+  // historique — plutôt que de planter ou d'ignorer ces joueurs. Idem pour
+  // un éventuel champ "name" manquant/corrompu.
+  for (const id of Object.keys(playersDB)) {
+    const rec = playersDB[id];
+    if (!rec || typeof rec !== 'object') { delete playersDB[id]; continue; }
+    if (!Number.isFinite(rec.bankroll)) rec.bankroll = START_BANKROLL;
+    if (!Number.isFinite(rec.record) || rec.record < rec.bankroll) {
+      rec.record = Number.isFinite(rec.record) ? Math.max(rec.record, rec.bankroll) : rec.bankroll;
+    }
+    if (typeof rec.name !== 'string' || !rec.name.trim()) rec.name = randomName();
   }
 }
 
@@ -76,10 +91,34 @@ function randomName() {
 
 function getOrCreatePlayerRecord(playerId) {
   if (!playersDB[playerId]) {
-    playersDB[playerId] = { name: randomName(), bankroll: START_BANKROLL };
+    playersDB[playerId] = { name: randomName(), bankroll: START_BANKROLL, record: START_BANKROLL };
     savePlayersDB();
   }
   return playersDB[playerId];
+}
+
+// Change le solde d'un joueur et met à jour, si besoin, son record personnel
+// (le solde de jetons le plus élevé jamais atteint). Centralise TOUTE
+// modification de bankroll pour que le record soit toujours à jour, pas
+// seulement en fin de manche (voir spinPhase / resolveRound).
+function setBankroll(rec, newBankroll) {
+  rec.bankroll = newBankroll;
+  if (!Number.isFinite(rec.record) || rec.bankroll > rec.record) {
+    rec.record = rec.bankroll;
+  }
+}
+
+// Classement global (tous les joueurs connus du serveur) par record de
+// jetons décroissant.
+function buildLeaderboard() {
+  return Object.entries(playersDB)
+    .map(([id, rec]) => ({
+      id,
+      name: rec.name || 'Joueur',
+      record: Number.isFinite(rec.record) ? rec.record : (Number.isFinite(rec.bankroll) ? rec.bankroll : START_BANKROLL),
+    }))
+    .sort((a, b) => b.record - a.record)
+    .slice(0, LEADERBOARD_SIZE);
 }
 
 function sanitizeName(raw) {
@@ -272,6 +311,9 @@ function serializeState() {
       name: p.name,
       connected: p.sockets.size > 0,
       bankroll: playersDB[p.id] ? playersDB[p.id].bankroll : START_BANKROLL,
+      // Record personnel (plus haut solde de jetons jamais atteint), utilisé
+      // par le panneau de classement (voir buildLeaderboard / "getLeaderboard").
+      record: playersDB[p.id] && Number.isFinite(playersDB[p.id].record) ? playersDB[p.id].record : START_BANKROLL,
       bets: p.bets,
       totalBet: playerTotalBet(p),
       ready: p.ready,
@@ -396,7 +438,7 @@ async function spinPhase(engaged) {
   for (const player of engaged) {
     const total = playerTotalBet(player);
     const rec = getOrCreatePlayerRecord(player.id);
-    rec.bankroll = Math.max(0, rec.bankroll - total);
+    setBankroll(rec, Math.max(0, rec.bankroll - total));
   }
   savePlayersDB();
 
@@ -428,8 +470,8 @@ function resolveRound(engaged) {
     else if (winnings < total) anyLose = true;
 
     const rec = getOrCreatePlayerRecord(player.id);
-    rec.bankroll += winnings;
-    if (rec.bankroll <= 0) rec.bankroll = START_BANKROLL; // filet de sécurité, table amicale
+    setBankroll(rec, rec.bankroll + winnings);
+    if (rec.bankroll <= 0) setBankroll(rec, START_BANKROLL); // filet de sécurité, table amicale
   }
   savePlayersDB();
 
@@ -471,6 +513,7 @@ function attachPlayerSocket(ws, playerId) {
     playerId,
     name: rec.name,
     bankroll: rec.bankroll,
+    record: rec.record,
   });
   send(ws, serializeState());
 }
@@ -560,6 +603,12 @@ wss.on('connection', (ws) => {
         player.ready = true;
         broadcastState();
         scheduleFastStartCheck();
+        break;
+      }
+      case 'getLeaderboard': {
+        // Classement global (tous joueurs connus du serveur) : envoyé
+        // uniquement au demandeur, pas de diffusion à toute la table.
+        send(ws, { type: 'leaderboard', entries: buildLeaderboard() });
         break;
       }
       default:

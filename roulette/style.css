@@ -863,6 +863,57 @@ button.players-pill:hover { background: rgba(212, 175, 90, 0.14); }
 .modal-body li { font-size: 0.9rem; line-height: 1.5; color: rgba(244, 234, 217, 0.9); }
 .modal-note { margin-top: 16px; font-size: 0.8rem; opacity: 0.6; font-style: italic; }
 
+/* ===== Modale classement (leaderboard) ===== */
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.22);
+  border: 1px solid transparent;
+}
+.leaderboard-row.mine {
+  border-color: var(--gold-bright);
+  background: rgba(212,175,90,0.1);
+}
+.leaderboard-rank {
+  font-family: var(--font-display);
+  font-weight: 800;
+  color: var(--gold-bright);
+  min-width: 28px;
+}
+.leaderboard-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.leaderboard-record {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--gold-bright);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.leaderboard-loading, .leaderboard-empty {
+  text-align: center;
+  padding: 20px 0;
+  margin: 0;
+  opacity: 0.6;
+  font-style: italic;
+  font-size: 0.9rem;
+}
+
 /* ===== Modale "Mon pseudo" ===== */
 .profile-modal-label { display: block; font-size: 0.78rem; opacity: 0.7; margin-bottom: 8px; }
 .profile-input-row { display: flex; gap: 8px; }

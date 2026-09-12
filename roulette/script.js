@@ -79,6 +79,11 @@ const els = {
   rulesBtn: document.getElementById('rulesBtn'),
   closeRulesBtn: document.getElementById('closeRulesBtn'),
   rulesModal: document.getElementById('rulesModal'),
+  // Classement (leaderboard)
+  leaderboardBtn: document.getElementById('leaderboardBtn'),
+  leaderboardModal: document.getElementById('leaderboardModal'),
+  closeLeaderboardBtn: document.getElementById('closeLeaderboardBtn'),
+  leaderboardList: document.getElementById('leaderboardList'),
   profileModal: document.getElementById('profileModal'),
   closeProfileBtn: document.getElementById('closeProfileBtn'),
   nameInput: document.getElementById('nameInput'),
@@ -714,6 +719,8 @@ function connect() {
       sayDealer(msg.text, msg.duration);
     } else if (msg.type === 'toast') {
       showToast(msg.text);
+    } else if (msg.type === 'leaderboard') {
+      renderLeaderboard(msg.entries);
     }
   });
 
@@ -753,8 +760,59 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     els.rulesModal.classList.remove('open');
     els.profileModal.classList.remove('open');
+    if (els.leaderboardModal) els.leaderboardModal.classList.remove('open');
   }
 });
+
+// ---------- Classement (leaderboard) ----------
+function renderLeaderboard(entries) {
+  els.leaderboardList.innerHTML = '';
+  if (!entries || entries.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'leaderboard-empty';
+    empty.textContent = 'Aucun joueur enregistré pour le moment.';
+    els.leaderboardList.appendChild(empty);
+    return;
+  }
+  entries.forEach((entry, i) => {
+    const row = document.createElement('div');
+    row.className = 'leaderboard-row' + (entry.id === myPlayerId ? ' mine' : '');
+
+    const rank = document.createElement('span');
+    rank.className = 'leaderboard-rank';
+    rank.textContent = `#${i + 1}`;
+
+    const name = document.createElement('span');
+    name.className = 'leaderboard-name';
+    // Pseudo potentiellement personnalisé par un joueur : toujours en
+    // textContent (jamais innerHTML), pour empêcher toute injection
+    // HTML/JS (XSS).
+    name.textContent = entry.name;
+
+    const record = document.createElement('span');
+    record.className = 'leaderboard-record';
+    record.textContent = `${entry.record.toLocaleString('fr-FR')} jetons`;
+
+    row.appendChild(rank);
+    row.appendChild(name);
+    row.appendChild(record);
+    els.leaderboardList.appendChild(row);
+  });
+}
+
+(function initLeaderboardModal() {
+  if (!els.leaderboardBtn || !els.leaderboardModal) return;
+
+  els.leaderboardBtn.addEventListener('click', () => {
+    els.leaderboardList.innerHTML = '<p class="leaderboard-loading">Chargement du classement…</p>';
+    els.leaderboardModal.classList.add('open');
+    send({ type: 'getLeaderboard' });
+  });
+  els.closeLeaderboardBtn.addEventListener('click', () => els.leaderboardModal.classList.remove('open'));
+  els.leaderboardModal.addEventListener('click', (e) => {
+    if (e.target === els.leaderboardModal) els.leaderboardModal.classList.remove('open');
+  });
+})();
 
 // ---------- Pseudo personnalisable ----------
 (function initProfileModal() {
