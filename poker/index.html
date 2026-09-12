@@ -20,11 +20,20 @@
       <span class="brand-icon">♣</span>
       <span class="brand-name">Maison<span class="accent">21</span> <small>Poker</small></span>
     </div>
-    <div class="bankroll-pill">
+
+    <!-- Identité du joueur : solde + pseudo modifiable + pastille de connexion -->
+    <div class="identity-pill" id="identityPill">
       <span class="chip-dot"></span>
-      <span id="bankroll">1000</span>
+      <span id="bankroll">—</span>
       <span class="currency">jetons</span>
+      <span class="identity-sep">·</span>
+      <button class="identity-name-btn" id="nameBtn" title="Changer de pseudo" aria-label="Changer de pseudo">
+        <span id="myName">…</span>
+        <span class="edit-icon">✏️</span>
+      </button>
     </div>
+    <span class="conn-dot" id="connDot" title="Connexion en cours…"></span>
+
     <!-- Menu inter-jeux : permet de changer de jeu en un clic depuis n'importe où -->
     <div class="game-menu">
       <button class="icon-btn" id="gameMenuBtn" title="Changer de jeu" aria-label="Changer de jeu" aria-haspopup="true" aria-expanded="false">🎲</button>
@@ -41,11 +50,12 @@
 
   <main class="felt" id="felt">
     <div class="felt-arc-text">TEXAS HOLD'EM · 6 PLACES</div>
-    <div class="felt-sub-text" id="handSubText">Blinds 10 / 20</div>
+    <div class="felt-sub-text" id="handSubText">Table partagée · Blinds 10 / 20</div>
 
     <div class="poker-oval"></div>
 
-    <section class="ai-row" id="aiRow"><!-- sièges IA générés en JS --></section>
+    <!-- Les 6 sièges (humains ou IA) sont injectés/mis à jour en JS -->
+    <div class="seats-ring" id="seatsRing"></div>
 
     <div class="center-zone">
       <div class="community-cards" id="communityCards"></div>
@@ -55,25 +65,18 @@
       </div>
       <div class="dealer-callout" id="dealerCallout"></div>
       <div class="center-status" id="centerStatus">
-        <div class="status-message" id="statusMessage">Bienvenue à la table de Poker</div>
+        <div class="status-message" id="statusMessage">Connexion à la table…</div>
+        <div class="next-hand-note" id="nextHandNote"></div>
       </div>
     </div>
-
-    <section class="seat player-seat" id="playerSeat">
-      <div class="cards" id="playerCards"></div>
-      <div class="seat-label">
-        <span class="player-tag" id="playerDealerTag"></span>
-        <span>Vous</span>
-        <span class="hand-score" id="playerBestHand"></span>
-      </div>
-      <div class="stack-row">
-        <span class="seat-stack" id="playerStackDisplay">1000</span>
-        <span class="seat-bet" id="playerBetDisplay"></span>
-      </div>
-    </section>
   </main>
 
   <footer class="control-deck">
+    <div class="turn-timer" id="turnTimerBar" hidden>
+      <div class="turn-timer-fill" id="turnTimerFill"></div>
+      <span class="turn-timer-text" id="turnTimerText"></span>
+    </div>
+
     <div class="raise-zone" id="raiseZone" hidden>
       <div class="raise-readout">
         <span class="bet-label">Relance à</span>
@@ -97,8 +100,8 @@
       <button class="btn btn-action btn-raise" id="raiseBtn">Relancer</button>
     </div>
 
-    <div class="start-zone" id="startZone">
-      <button class="btn btn-primary" id="startHandBtn">Distribuer la main</button>
+    <div class="wait-zone" id="waitZone">
+      <span id="waitMessage">Connexion à la table…</span>
     </div>
   </footer>
 </div>
@@ -111,32 +114,35 @@
     </div>
     <div class="modal-body">
       <ul>
-        <li>Chaque joueur reçoit <strong>2 cartes privées</strong>. <strong>5 cartes communes</strong> sont posées au centre : le <strong>flop</strong> (3), le <strong>turn</strong> (1) et la <strong>rivière</strong> (1).</li>
+        <li>Table partagée de <strong>6 places</strong> : les joueurs humains connectés occupent des sièges réels, les places restantes sont comblées par des adversaires IA pour que la table ne soit jamais vide.</li>
+        <li>Chaque joueur reçoit <strong>2 cartes privées</strong>, visibles de lui seul. <strong>5 cartes communes</strong> sont posées au centre : le <strong>flop</strong> (3), le <strong>turn</strong> (1) et la <strong>rivière</strong> (1).</li>
         <li>Le but est de former la <strong>meilleure main de 5 cartes</strong> en combinant vos cartes privées et les cartes communes.</li>
         <li>Ordre des mains, de la plus forte à la plus faible : <strong>Quinte flush royale</strong>, Quinte flush, Carré, Full, Couleur, Suite, Brelan, Double paire, Paire, Carte haute.</li>
-        <li>Un <strong>bouton donneur</strong> (D) se déplace d'un joueur à chaque main. Les deux joueurs suivants postent la <strong>petite blind</strong> et la <strong>grosse blind</strong> avant de voir leurs cartes.</li>
-        <li>À chaque tour de mise, vous pouvez <strong>suivre</strong> (payer la mise en cours), <strong>relancer</strong> (augmenter la mise), ou <strong>vous coucher</strong> (abandonner la main). Si personne n'a misé, vous pouvez faire <strong>parole</strong> (passer sans miser).</li>
+        <li>Un <strong>bouton donneur</strong> (D) se déplace à chaque main. Les deux joueurs suivants postent la <strong>petite blind</strong> et la <strong>grosse blind</strong> avant de voir leurs cartes.</li>
+        <li>À votre tour, vous pouvez <strong>suivre</strong> (payer la mise en cours), <strong>relancer</strong> (augmenter la mise), ou <strong>vous coucher</strong> (abandonner la main). Si personne n'a misé, vous pouvez faire <strong>parole</strong> (passer sans miser).</li>
+        <li>Vous disposez d'environ <strong>22 secondes</strong> pour agir ; passé ce délai, une action automatique (parole ou couché) est jouée à votre place.</li>
         <li>Si tous les autres joueurs se couchent, le dernier joueur en lice remporte le pot sans montrer ses cartes.</li>
         <li>À la <strong>rivière</strong>, s'il reste plusieurs joueurs, c'est l'<strong>abattage</strong> : les mains sont comparées et la meilleure remporte le pot.</li>
         <li>Un joueur qui mise tout son tapis est <strong>all-in</strong> ; s'il a moins de jetons que les autres, un <strong>pot annexe</strong> est créé pour les mises excédentaires des autres joueurs.</li>
-        <li>Votre solde de jetons est sauvegardé automatiquement. Si vous tombez à <strong>0 jeton</strong>, un rachat vous est proposé.</li>
+        <li>Votre solde de jetons est sauvegardé automatiquement sur le serveur. Si vous tombez à <strong>0 jeton</strong>, un rachat automatique de 1000 jetons est appliqué avant la main suivante.</li>
       </ul>
       <p class="modal-note">Jeu 100% gratuit, à but purement ludique — aucune monnaie réelle n'est utilisée.</p>
     </div>
   </div>
 </div>
 
-<div class="modal-backdrop" id="rebuyModal">
+<div class="modal-backdrop" id="nameModal">
   <div class="modal">
     <div class="modal-head">
-      <h2>Tapis vide</h2>
+      <h2>Votre pseudo</h2>
+      <button class="icon-btn" id="closeNameBtn" aria-label="Fermer">×</button>
     </div>
     <div class="modal-body">
-      <p>Vous n'avez plus de jetons devant vous. La maison vous offre un rachat pour continuer à jouer.</p>
+      <input type="text" id="nameInput" class="name-input" maxlength="20" placeholder="Votre pseudo" autocomplete="off">
       <div class="rebuy-actions">
-        <button class="btn btn-primary" id="rebuyBtn">Racheter 1000 jetons</button>
+        <button class="btn btn-primary" id="saveNameBtn">Enregistrer</button>
       </div>
-      <p class="modal-note">Jeu 100% gratuit — le rachat ne coûte rien, il réinitialise simplement votre solde.</p>
+      <p class="modal-note">Visible de tous les joueurs à la table. 20 caractères maximum.</p>
     </div>
   </div>
 </div>

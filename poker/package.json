@@ -1,0 +1,14 @@
+{
+  "name": "maison21-poker",
+  "version": "2.0.0",
+  "description": "Poker Texas Hold'em — table partagée multijoueur avec IA en complément, croupier RP et évaluateur 7 cartes",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  }
+}
