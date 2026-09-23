@@ -582,7 +582,15 @@ wss.on('connection', (ws, req) => {
     if (!msg || typeof msg.type !== 'string') return;
 
     if (msg.type === 'hello') {
-      const anonId = (typeof msg.playerId === 'string' && msg.playerId.length > 0) ? msg.playerId : null;
+      let anonId = (typeof msg.playerId === 'string' && msg.playerId.length > 0) ? msg.playerId : null;
+      // Faille fermée : un client NON authentifié (ws.accountUsername vide)
+      // pourrait sinon forger un playerId de la forme "acct:<compte>" dans
+      // le message "hello" et ainsi usurper le solde d'un compte sans
+      // connaître son mot de passe (accountPlayerId() est la SEULE source
+      // légitime de ce préfixe, jamais le client). On neutralise donc tout
+      // playerId client qui porterait déjà ce préfixe réservé, quelle que
+      // soit la casse.
+      if (anonId && /^acct:/i.test(anonId)) anonId = null;
       let playerId;
       if (ws.accountUsername) {
         playerId = accountPlayerId(ws.accountUsername);
