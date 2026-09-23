@@ -972,6 +972,63 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+/* ===== Compte utilisateur (connexion / inscription / déconnexion) ===== */
+/* Composant dupliqué à l'identique sur les 4 pages du site (même logique
+   que le menu inter-jeux ci-dessus) : pas de dépendance à un module CSS/JS
+   partagé entre pages. Voir shared/auth-server.js pour le service, et le
+   widget correspondant tout en bas de script.js. */
+.auth-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  font-family: inherit;
+  color: var(--cream);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  max-width: 170px;
+  backdrop-filter: blur(6px);
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+.auth-pill span:not(.auth-pill-icon) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auth-pill:hover { background: rgba(212,175,90,0.14); }
+.auth-pill.connected { border-color: rgba(53,194,107,0.55); }
+.auth-pill-icon { flex-shrink: 0; }
+
+.auth-current { margin: 0 0 14px; font-size: 0.88rem; line-height: 1.5; color: rgba(244,234,217,0.85); }
+.auth-current strong { color: var(--gold-bright); }
+
+.auth-tabs { display: flex; gap: 6px; margin-bottom: 16px; background: rgba(0,0,0,0.28); border-radius: 10px; padding: 4px; }
+.auth-tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: rgba(244,234,217,0.65);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.auth-tab.active { background: linear-gradient(180deg, var(--gold-bright), var(--gold)); color: #2a1c04; }
+
+.auth-form { display: flex; flex-direction: column; }
+.auth-form label { display: block; font-size: 0.78rem; opacity: 0.7; margin: 12px 0 8px; }
+.auth-form label:first-child { margin-top: 0; }
+.auth-form .name-input { flex: none; width: 100%; }
+.auth-submit-btn { width: 100%; display: block; margin-top: 16px; }
+.auth-logout-btn { width: 100%; display: block; }
+.auth-error { margin: 12px 0 0; font-size: 0.8rem; color: var(--red-bright); }
+
 /* ===== Responsive ===== */
 @media (max-width: 480px) {
   /* Sur mobile, la page n'a pas de défilement (hauteur fixe) : le bandeau
@@ -995,6 +1052,8 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
   .table-pill span:not(.table-pill-icon) { display: none; }
   .profile-pill { max-width: 34px; padding: 5px 8px; }
   .profile-pill span:not(.profile-pill-icon) { display: none; }
+  .auth-pill { max-width: 34px; padding: 5px 8px; }
+  .auth-pill span:not(.auth-pill-icon) { display: none; }
   .hand-pod .card-slot { width: 44px; height: 62px; margin-left: -16px; }
   .card-slot { width: 60px; height: 84px; margin-left: -20px; }
   .chip { width: 50px; height: 50px; font-size: 0.82rem; }

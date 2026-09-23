@@ -433,6 +433,131 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
 }
 .hall-footer p { margin: 0; }
 
+/* ===== Boutons / modales (repris à l'identique des 3 jeux, pour le
+   composant de connexion ci-dessous — le lobby n'avait jusqu'ici aucun
+   bouton plein ni aucune modale) ===== */
+.btn {
+  border: none;
+  border-radius: 12px;
+  padding: 12px 24px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  transition: transform 0.12s ease, filter 0.12s ease, box-shadow 0.12s ease;
+  box-shadow: 0 4px 0 rgba(0,0,0,0.25), 0 6px 14px rgba(0,0,0,0.3);
+}
+.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0,0,0,0.25), 0 2px 6px rgba(0,0,0,0.3); }
+.btn:disabled { opacity: 0.35; pointer-events: none; }
+.btn-primary { background: linear-gradient(180deg, var(--gold-bright), var(--gold)); color: #2a1c04; }
+.btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-ghost { background: rgba(255,255,255,0.08); color: var(--cream); border: 1px solid rgba(255,255,255,0.18); box-shadow: none; }
+.btn-ghost:hover:not(:disabled) { background: rgba(255,255,255,0.15); }
+
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.2s ease;
+  padding: 20px;
+}
+.modal-backdrop.open { opacity: 1; pointer-events: auto; }
+.modal {
+  background: linear-gradient(160deg, #12261d, #0b1a13);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  max-width: 480px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-deep);
+  transform: translateY(16px) scale(0.97);
+  transition: transform 0.22s cubic-bezier(.2,.9,.3,1.1);
+}
+.modal-backdrop.open .modal { transform: translateY(0) scale(1); }
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.modal-head h2 { margin: 0; font-family: var(--font-display); font-size: 1.3rem; color: var(--gold-bright); }
+.modal-body { padding: 18px 22px 22px; }
+.modal-note { margin-top: 16px; font-size: 0.8rem; opacity: 0.6; font-style: italic; }
+
+.name-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0,0,0,0.28);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--cream);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.name-input:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
+.name-input::placeholder { color: rgba(244,234,217,0.35); }
+
+/* ===== Compte utilisateur (connexion / inscription / déconnexion) ===== */
+/* Composant dupliqué à l'identique sur les 4 pages du site (même logique
+   que le menu inter-jeux ci-dessus) : pas de dépendance à un module CSS/JS
+   partagé entre pages. Voir shared/auth-server.js pour le service, et le
+   widget correspondant tout en bas de script.js. */
+.auth-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  font-family: inherit;
+  color: var(--cream);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  max-width: 170px;
+  backdrop-filter: blur(6px);
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+.auth-pill span:not(.auth-pill-icon) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auth-pill:hover { background: rgba(212,175,90,0.14); }
+.auth-pill.connected { border-color: rgba(53,194,107,0.55); }
+.auth-pill-icon { flex-shrink: 0; }
+
+.auth-current { margin: 0 0 14px; font-size: 0.88rem; line-height: 1.5; color: rgba(244,234,217,0.85); }
+.auth-current strong { color: var(--gold-bright); }
+
+.auth-tabs { display: flex; gap: 6px; margin-bottom: 16px; background: rgba(0,0,0,0.28); border-radius: 10px; padding: 4px; }
+.auth-tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: rgba(244,234,217,0.65);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.auth-tab.active { background: linear-gradient(180deg, var(--gold-bright), var(--gold)); color: #2a1c04; }
+
+.auth-form { display: flex; flex-direction: column; }
+.auth-form label { display: block; font-size: 0.78rem; opacity: 0.7; margin: 12px 0 8px; }
+.auth-form label:first-child { margin-top: 0; }
+.auth-form .name-input { flex: none; width: 100%; }
+.auth-submit-btn { width: 100%; display: block; margin-top: 16px; }
+.auth-logout-btn { width: 100%; display: block; }
+.auth-error { margin: 12px 0 0; font-size: 0.8rem; color: var(--red-bright); }
+
 /* ===== Responsive ===== */
 @media (max-width: 640px) {
   .hall-main { gap: 34px; padding: 34px 16px 24px; }
@@ -445,6 +570,8 @@ a.game-menu-item:hover { background: rgba(212,175,90,0.14); }
   .brand-sub { display: none; }
   .brand { font-size: 1.15rem; }
   .icon-btn { width: 32px; height: 32px; font-size: 0.95rem; }
+  .auth-pill { max-width: 34px; padding: 5px 8px; }
+  .auth-pill span:not(.auth-pill-icon) { display: none; }
   .game-menu-panel { min-width: 190px; right: -6px; }
   .hero-tagline { font-size: 0.92rem; }
   .game-card-art { height: 130px; }
