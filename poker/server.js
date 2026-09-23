@@ -42,6 +42,17 @@ const fs = require('fs');
 const crypto = require('crypto');
 const express = require('express');
 const { WebSocketServer } = require('ws');
+// Résolution de compte partagé (voir shared/session-lookup.js) : lit
+// directement le fichier de sessions écrit par shared/auth-server.js, sans
+// appel réseau. Si le module est absent (déploiement partiel, ordre
+// d'installation...), on retombe silencieusement sur le comportement 100%
+// anonyme habituel plutôt que de planter au démarrage.
+let resolveSessionFromCookieHeader = () => null;
+try {
+  ({ resolveSessionFromCookieHeader } = require('../shared/session-lookup'));
+} catch (err) {
+  console.warn('shared/session-lookup indisponible — comptes désactivés, mode anonyme uniquement.', err.message);
+}
 
 // ---------- Configuration ----------
 const PORT = process.env.PORT || 3035;
@@ -244,6 +255,30 @@ function getOrCreatePlayerRecord(playerId, initialName) {
     savePlayersDB();
   }
   return playersDB[playerId];
+}
+
+// ---------- Comptes (voir shared/auth-server.js et shared/session-lookup.js) ----------
+// Un joueur connecté à un compte est identifié dans playersDB par une clé
+// STABLE dérivée de son nom d'utilisateur (toujours en minuscules, pour
+// qu'"Alice" et "alice" restent le même joueur), préfixée pour ne jamais
+// entrer en collision avec un UUID anonyme (qui ne contient pas ":").
+function accountPlayerId(username) {
+  return `acct:${username.toLowerCase()}`;
+}
+
+// Migration douce : la toute première fois qu'un compte est vu dans CE jeu
+// (aucune entrée playersDB pour lui), s'il existait déjà une entrée
+// anonyme (UUID local au navigateur) avec un solde, on la TRANSFÈRE vers la
+// nouvelle clé de compte plutôt que de repartir de START_BANKROLL — un
+// joueur qui crée un compte après coup ne doit pas perdre sa progression.
+// L'ancienne entrée anonyme est ensuite supprimée (elle a été reprise).
+function migrateAnonymousRecordToAccount(accountId, anonId) {
+  if (!anonId || anonId === accountId) return;
+  if (playersDB[accountId]) return; // compte déjà connu ici, rien à migrer
+  if (!playersDB[anonId]) return; // pas d'historique anonyme à récupérer
+  playersDB[accountId] = playersDB[anonId];
+  delete playersDB[anonId];
+  savePlayersDB();
 }
 
 // Change le solde d'un joueur et met à jour, si besoin, son record personnel
@@ -1280,9 +1315,16 @@ function detachSocket(ws) {
   broadcastState();
 }
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
+
+  // Résolu une seule fois, à l'ouverture du socket, à partir du cookie de
+  // la requête HTTP d'upgrade (le cookie n'est pas renvoyé sur chaque
+  // message websocket individuel, seulement sur cette requête initiale).
+  // null si le joueur n'est pas connecté à un compte -> comportement
+  // anonyme inchangé.
+  ws.accountUsername = resolveSessionFromCookieHeader(req && req.headers && req.headers.cookie);
 
   ws.on('message', (raw) => {
     let msg;
@@ -1290,13 +1332,28 @@ wss.on('connection', (ws) => {
     if (!msg || typeof msg.type !== 'string') return;
 
     if (msg.type === 'hello') {
-      const playerId = (typeof msg.playerId === 'string' && msg.playerId.length > 0)
-        ? msg.playerId
-        : crypto.randomUUID();
+      const anonId = (typeof msg.playerId === 'string' && msg.playerId.length > 0) ? msg.playerId : null;
+      let playerId;
+      if (ws.accountUsername) {
+        playerId = accountPlayerId(ws.accountUsername);
+        migrateAnonymousRecordToAccount(playerId, anonId);
+      } else {
+        playerId = anonId || crypto.randomUUID();
+      }
       ws.playerId = playerId;
       const rec = getOrCreatePlayerRecord(playerId, msg.name);
       attachSocket(ws, playerId);
-      send(ws, { type: 'welcome', playerId, name: rec.name, bankroll: rec.bankroll, record: rec.record });
+      send(ws, {
+        type: 'welcome',
+        playerId,
+        name: rec.name,
+        bankroll: rec.bankroll,
+        record: rec.record,
+        // Compte connecté (ou null en anonyme) : permet au client d'afficher
+        // "Connecté en tant que X" au lieu du pseudo aléatoire — voir
+        // shared/session-lookup.js et le widget de connexion dans script.js.
+        account: ws.accountUsername || null,
+      });
       wakeLoop();
       broadcastState();
       return;
