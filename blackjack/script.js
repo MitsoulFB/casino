@@ -874,6 +874,168 @@ function renderLeaderboard(entries) {
   });
 })();
 
+// ---------- Compte utilisateur (connexion / inscription / déconnexion) ----------
+// Système de comptes partagé sur tout le site (voir shared/auth-server.js) :
+// un cookie de session HttpOnly (m21_session), posé avec Path=/ et sans
+// Domain explicite, est automatiquement envoyé à toutes les pages du même
+// domaine (lobby + 3 jeux, même sous des chemins différents) — un seul
+// login vaut donc pour tout le site. Widget dupliqué à l'identique sur les
+// 4 pages (même logique que le menu inter-jeux ci-dessus), sans dépendance
+// à un module JS partagé entre pages.
+(function initAuthWidget() {
+  const pill = document.getElementById('authPill');
+  const modal = document.getElementById('authModal');
+  if (!pill || !modal) return;
+
+  const pillIcon = document.getElementById('authPillIcon');
+  const pillLabel = document.getElementById('authPillLabel');
+  const closeBtn = document.getElementById('closeAuthBtn');
+  const loggedInView = document.getElementById('authLoggedInView');
+  const loggedOutView = document.getElementById('authLoggedOutView');
+  const accountNameEl = document.getElementById('authAccountName');
+  const logoutBtn = document.getElementById('authLogoutBtn');
+  const tabLogin = document.getElementById('authTabLogin');
+  const tabRegister = document.getElementById('authTabRegister');
+  const loginForm = document.getElementById('authLoginForm');
+  const registerForm = document.getElementById('authRegisterForm');
+  const errorEl = document.getElementById('authError');
+
+  let currentAccount = null; // pseudo du compte connecté, ou null si anonyme
+
+  function setAuthError(message) {
+    if (!message) { errorEl.hidden = true; errorEl.textContent = ''; return; }
+    errorEl.textContent = message;
+    errorEl.hidden = false;
+  }
+
+  function updateAuthPill() {
+    if (currentAccount) {
+      pill.classList.add('connected');
+      pillIcon.textContent = '👤';
+      pillLabel.textContent = currentAccount;
+      pill.title = `Connecté en tant que ${currentAccount} — cliquez pour gérer votre compte`;
+    } else {
+      pill.classList.remove('connected');
+      pillIcon.textContent = '🔐';
+      pillLabel.textContent = 'Se connecter';
+      pill.title = 'Connexion / inscription';
+    }
+  }
+
+  function showAuthTab(which) {
+    const isLogin = which === 'login';
+    tabLogin.classList.toggle('active', isLogin);
+    tabRegister.classList.toggle('active', !isLogin);
+    loginForm.hidden = !isLogin;
+    registerForm.hidden = isLogin;
+    setAuthError(null);
+  }
+
+  // Interroge le service d'auth pour savoir si un compte est déjà connecté
+  // (cookie de session posé lors d'une visite précédente, éventuellement
+  // depuis une autre page du site) : c'est la source de vérité pour cette
+  // pastille, plus simple et cohérente sur les 4 pages qu'un état dérivé du
+  // "welcome" websocket (voir aussi son champ "account", utilisé côté
+  // serveur pour l'identité de jeu, mais pas repris ici pour ne pas avoir
+  // deux sources d'affichage différentes).
+  function refreshAuthFromServer() {
+    return fetch('/auth/me', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : { username: null }))
+      .then((data) => {
+        currentAccount = (data && data.username) || null;
+        updateAuthPill();
+      })
+      .catch(() => { /* hors-ligne : on garde le dernier état affiché */ });
+  }
+
+  function openAuthModal() {
+    setAuthError(null);
+    if (currentAccount) {
+      loggedInView.hidden = false;
+      loggedOutView.hidden = true;
+      accountNameEl.textContent = currentAccount;
+    } else {
+      loggedInView.hidden = true;
+      loggedOutView.hidden = false;
+      showAuthTab('login');
+      loginForm.reset();
+      registerForm.reset();
+    }
+    modal.classList.add('open');
+  }
+  function closeAuthModal() { modal.classList.remove('open'); }
+
+  pill.addEventListener('click', openAuthModal);
+  closeBtn.addEventListener('click', closeAuthModal);
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeAuthModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAuthModal(); });
+
+  tabLogin.addEventListener('click', () => showAuthTab('login'));
+  tabRegister.addEventListener('click', () => showAuthTab('register'));
+
+  async function postAuthJson(url, body) {
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      return { ok: false, data: { message: 'Connexion au serveur impossible.' } };
+    }
+    let data = null;
+    try { data = await res.json(); } catch { /* réponse sans corps JSON */ }
+    return { ok: res.ok, data };
+  }
+
+  // Après une connexion/inscription/déconnexion réussie DEPUIS un jeu, le
+  // websocket de CE jeu doit se reconnecter pour relire le nouveau cookie
+  // et basculer sur (ou quitter) l'identité du compte : un simple
+  // rechargement de page fait ça proprement, sans logique de reconnexion
+  // manuelle à dupliquer ici.
+  function afterAuthChange() {
+    location.reload();
+  }
+
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    setAuthError(null);
+    const username = document.getElementById('authLoginUsername').value;
+    const password = document.getElementById('authLoginPassword').value;
+    const submitBtn = loginForm.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    const { ok, data } = await postAuthJson('/auth/login', { username, password });
+    if (ok && data && data.ok) { afterAuthChange(); return; }
+    submitBtn.disabled = false;
+    setAuthError((data && data.message) || 'Connexion impossible.');
+  });
+
+  registerForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    setAuthError(null);
+    const username = document.getElementById('authRegisterUsername').value;
+    const password = document.getElementById('authRegisterPassword').value;
+    const submitBtn = registerForm.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    const { ok, data } = await postAuthJson('/auth/register', { username, password });
+    if (ok && data && data.ok) { afterAuthChange(); return; }
+    submitBtn.disabled = false;
+    setAuthError((data && data.message) || 'Impossible de créer ce compte.');
+  });
+
+  logoutBtn.addEventListener('click', async () => {
+    logoutBtn.disabled = true;
+    try {
+      await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    } catch { /* on recharge de toute façon, l'état repartira à jour */ }
+    afterAuthChange();
+  });
+
+  refreshAuthFromServer();
+})();
+
 // ---------- Init ----------
 els.bankroll.textContent = loadCachedBankroll().toLocaleString('fr-FR');
 els.gameActions.hidden = true;
