@@ -46,6 +46,10 @@ html, body {
   margin: 0;
   padding: 0;
   min-height: 100%;
+  /* Empêche le double-tap-to-zoom de Safari/iOS (gênant en misant vite sur
+     le tapis) ; complète le "user-scalable=no" du <meta viewport>, qui seul
+     ne suffit pas toujours sur Safari. */
+  touch-action: manipulation;
 }
 
 body {

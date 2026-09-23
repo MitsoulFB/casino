@@ -30,6 +30,10 @@ html, body {
   margin: 0;
   padding: 0;
   overflow: hidden;
+  /* Empêche le double-tap-to-zoom de Safari/iOS (gênant en cliquant vite
+     sur les actions/relances) ; complète le "user-scalable=no" du <meta
+     viewport>, qui seul ne suffit pas toujours sur Safari. */
+  touch-action: manipulation;
 }
 
 body {
