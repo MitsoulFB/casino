@@ -45,7 +45,19 @@ function loadOrCreatePlayerId() {
   }
   return id;
 }
-const myPlayerId = loadOrCreatePlayerId();
+const myAnonPlayerId = loadOrCreatePlayerId();
+// Identité utilisée pour se reconnaître dans le "state" partagé par le
+// serveur (comparaisons player.id === myPlayerId un peu partout ci-dessous).
+// Initialisée à l'UUID anonyme local, puis réalignée sur l'identité
+// RÉELLEMENT résolue par le serveur (welcome.playerId) dès la connexion —
+// qui devient "acct:<compte>" si un compte est connecté (voir
+// shared/session-lookup.js côté serveur) au lieu de l'UUID anonyme. Sans ce
+// réalignement, un joueur connecté à un compte ne se retrouverait plus dans
+// sa propre table (mauvais solde affiché, mauvaise mise mise en avant...).
+// Le message "hello" envoie toujours myAnonPlayerId (voir plus bas), jamais
+// myPlayerId, pour que le serveur puisse retrouver un éventuel historique
+// anonyme à migrer vers le compte.
+let myPlayerId = myAnonPlayerId;
 
 function cacheBankroll(n) {
   try { localStorage.setItem(BANKROLL_CACHE_KEY, String(n)); } catch { /* ignore */ }
@@ -717,13 +729,18 @@ function connect() {
   ws.addEventListener('open', () => {
     reconnectDelay = 1000;
     els.connDot.classList.add('online');
-    send({ type: 'hello', playerId: myPlayerId });
+    send({ type: 'hello', playerId: myAnonPlayerId });
   });
 
   ws.addEventListener('message', (evt) => {
     let msg;
     try { msg = JSON.parse(evt.data); } catch { return; }
     if (msg.type === 'welcome') {
+      // Réaligne l'identité utilisée pour les comparaisons avec le "state"
+      // (voir la déclaration de myPlayerId plus haut) sur celle réellement
+      // retenue par le serveur pour CETTE connexion — décisif si un compte
+      // est connecté (identité "acct:<compte>" au lieu de l'UUID anonyme).
+      if (typeof msg.playerId === 'string' && msg.playerId) myPlayerId = msg.playerId;
       cacheBankroll(msg.bankroll);
       els.myNameLabel.textContent = msg.name;
     } else if (msg.type === 'state') {

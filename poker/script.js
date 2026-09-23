@@ -34,7 +34,17 @@ function loadOrCreatePlayerId() {
   }
   return id;
 }
-const myPlayerId = loadOrCreatePlayerId();
+const myAnonPlayerId = loadOrCreatePlayerId();
+// Identité utilisée pour le classement (entry.id === myPlayerId). Le reste
+// de l'UI poker n'en a pas besoin : le serveur calcule déjà "seat.isYou" et
+// "state.you" pour la BONNE identité (voir buildStateForViewer côté
+// serveur, qui utilise ws.playerId — "acct:<compte>" si un compte est
+// connecté). Réalignée sur welcome.playerId dès la connexion, comme dans
+// les 2 autres jeux, pour que le classement mette bien en avant la ligne du
+// compte connecté plutôt que celle de l'UUID anonyme. Le "hello" envoie
+// toujours myAnonPlayerId (jamais myPlayerId), pour que le serveur puisse
+// retrouver un éventuel historique anonyme à migrer vers le compte.
+let myPlayerId = myAnonPlayerId;
 
 function cacheName(n) { try { localStorage.setItem(NAME_CACHE_KEY, n); } catch { /* ignore */ } }
 function loadCachedName() { try { return localStorage.getItem(NAME_CACHE_KEY) || ''; } catch { return ''; } }
@@ -692,7 +702,7 @@ function connect() {
   ws.addEventListener('open', () => {
     reconnectDelay = 1000;
     setConnUI(true);
-    send({ type: 'hello', playerId: myPlayerId, name: loadCachedName() || undefined });
+    send({ type: 'hello', playerId: myAnonPlayerId, name: loadCachedName() || undefined });
   });
 
   ws.addEventListener('message', (evt) => {
@@ -701,6 +711,11 @@ function connect() {
     if (!msg || typeof msg.type !== 'string') return;
 
     if (msg.type === 'welcome') {
+      // Réaligne l'identité utilisée pour le classement (voir la
+      // déclaration de myPlayerId plus haut) sur celle réellement retenue
+      // par le serveur pour CETTE connexion — "acct:<compte>" si un compte
+      // est connecté, au lieu de l'UUID anonyme.
+      if (typeof msg.playerId === 'string' && msg.playerId) myPlayerId = msg.playerId;
       cacheName(msg.name);
       cacheBankroll(msg.bankroll);
     } else if (msg.type === 'state') {
