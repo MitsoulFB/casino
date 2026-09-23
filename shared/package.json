@@ -1,0 +1,13 @@
+{
+  "name": "maison21-shared-auth",
+  "version": "1.0.0",
+  "description": "Comptes partagés (auth-server.js) et résolution de session (session-lookup.js) pour les 4 pages de Maison21",
+  "private": true,
+  "main": "auth-server.js",
+  "scripts": {
+    "start": "node auth-server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
