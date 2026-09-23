@@ -35,6 +35,12 @@
         <span class="profile-pill-icon">👤</span>
         <span id="myNameLabel">Joueur</span>
       </button>
+      <!-- Compte utilisateur (connexion/inscription/déconnexion), partagé
+           sur les 4 pages du site via shared/auth-server.js. -->
+      <button class="auth-pill" id="authPill" title="Connexion / inscription">
+        <span class="auth-pill-icon" id="authPillIcon">🔐</span>
+        <span id="authPillLabel">Se connecter</span>
+      </button>
       <div class="bankroll-pill">
         <span class="chip-dot"></span>
         <span id="bankroll">1000</span>
@@ -218,6 +224,46 @@
     <div class="modal-body">
       <p class="exclusion-message" id="exclusionMessage">Vous avez manqué votre tour sur deux manches consécutives : vous ne pouvez plus miser ni jouer sur cette table.</p>
       <button class="btn btn-primary table-modal-btn" id="rejoinTableBtn">Reprendre place à la table</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- Compte utilisateur : connexion / inscription / déconnexion. Modale
+     partagée sur les 4 pages du site (voir shared/auth-server.js). -->
+<div class="modal-backdrop" id="authModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Mon compte</h2>
+      <button class="icon-btn" id="closeAuthBtn" aria-label="Fermer">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="authLoggedInView" hidden>
+        <p class="auth-current">Connecté en tant que <strong id="authAccountName">—</strong>.</p>
+        <button class="btn btn-ghost auth-logout-btn" id="authLogoutBtn">Se déconnecter</button>
+      </div>
+      <div id="authLoggedOutView">
+        <div class="auth-tabs">
+          <button class="auth-tab active" id="authTabLogin" type="button">Connexion</button>
+          <button class="auth-tab" id="authTabRegister" type="button">Créer un compte</button>
+        </div>
+        <form class="auth-form" id="authLoginForm">
+          <label for="authLoginUsername">Nom d'utilisateur</label>
+          <input class="name-input" id="authLoginUsername" type="text" autocomplete="username" required>
+          <label for="authLoginPassword">Mot de passe</label>
+          <input class="name-input" id="authLoginPassword" type="password" autocomplete="current-password" required>
+          <button class="btn btn-primary auth-submit-btn" type="submit">Se connecter</button>
+        </form>
+        <form class="auth-form" id="authRegisterForm" hidden>
+          <label for="authRegisterUsername">Nom d'utilisateur</label>
+          <input class="name-input" id="authRegisterUsername" type="text" autocomplete="username" required>
+          <label for="authRegisterPassword">Mot de passe</label>
+          <input class="name-input" id="authRegisterPassword" type="password" autocomplete="new-password" required>
+          <button class="btn btn-primary auth-submit-btn" type="submit">Créer mon compte</button>
+        </form>
+        <p class="auth-error" id="authError" hidden></p>
+      </div>
+      <p class="modal-note">Un compte relie votre solde de jetons sur toutes les tables et tous vos appareils — aucune exigence de mot de passe complexe.</p>
     </div>
   </div>
 </div>
